@@ -1,0 +1,22 @@
+{
+  "name": "ascendio-rp-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bot oficial da comunidade Ascendio RP",
+  "type": "module",
+  "engines": { "node": ">=24.17.0 <25" },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "start": "node --env-file-if-exists=.env --max-old-space-size=128 dist/index.js",
+    "register": "node --env-file-if-exists=.env dist/register.js",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "check": "npm run typecheck && npm test && npm run build",
+    "doctor": "node --env-file-if-exists=.env dist/doctor.js",
+    "config:import": "node --env-file-if-exists=.env dist/import-config.js",
+    "verify:offline": "node scripts/verify-offline.mjs"
+  },
+  "dependencies": { "discord.js": "14.27.0" },
+  "devDependencies": { "@types/node": "24.19.2", "tsx": "4.23.15", "typescript": "7.0.2" }
+}
