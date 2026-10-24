@@ -87,9 +87,9 @@ O registro substitui a lista de comandos de servidor desta aplicação. Use uma 
 | `/configurar ver` | Canais, cargos e quantidade de regras oficiais |
 | `/configurar canal uso destino` | Define boas-vindas, logs ou canal de regras; omitir destino desativa |
 | `/configurar cargo cargo acao` | Adiciona ou remove um cargo de publicadores |
-| `/configurar identidade` | Nome do servidor, rodapé e URL de logotipo |
+| `/configurar identidade` | Nome do servidor e URL de logotipo |
 | `/configurar boas-vindas` | Edita título e mensagem com `{membro}`, `{servidor}` e `{regras}` |
-| `/configurar template tipo` | Cor, rodapé, imagem e miniatura por tipo |
+| `/configurar template tipo` | Cor, imagem e miniatura por tipo |
 | `/configurar regra categoria` | Edita título, texto e status oficial de uma categoria |
 | `/configurar testar-boas-vindas` | Mostra a recepção em prévia privada |
 | `/configurar historico` | Últimas ações e quantidade de envios incertos |
@@ -98,7 +98,7 @@ O registro substitui a lista de comandos de servidor desta aplicação. Use uma 
 ### Primeira configuração
 
 1. Com permissão **Gerenciar servidor**, defina os canais de boas-vindas, regras e logs usando `/configurar canal`.
-2. Ajuste nome, rodapé, logotipo e templates. Imagens são opcionais; nenhum logotipo de terceiros acompanha o projeto.
+2. Ajuste nome, logotipo e templates. Imagens são opcionais; nenhum logotipo de terceiros acompanha o projeto.
 3. Revise `/configurar testar-boas-vindas`.
 4. Edite cada uma das oito categorias por `/configurar regra`. Digite `sim` em **Conteúdo oficial?** somente depois de aprovar o texto. As categorias começam com marcação **DEMONSTRAÇÃO — NÃO OFICIAL**. A publicação preserva o status de cada categoria.
 5. Crie uma prévia de regulamento com `/regras` e confirme a publicação depois da revisão.
@@ -109,7 +109,7 @@ Alterações são persistidas imediatamente e não exigem recompilação. Os IDs
 
 Escolha um comando e o canal. O formulário possui título, descrição Markdown, imagem, miniatura e campos adicionais.
 
-O embed exibe somente o título preenchido pela equipe, sem repetir o nome do servidor em um cabeçalho automático. A assinatura da comunidade permanece no rodapé. Por exemplo, use **REGULAMENTO DA COMUNIDADE** como título.
+O embed exibe somente o título preenchido pela equipe, sem cabeçalho automático ou assinatura no rodapé. Regras e boas-vindas também não exibem assinatura no rodapé. Por exemplo, use **REGULAMENTO DA COMUNIDADE** como título.
 
 Para campos, use uma linha por campo:
 

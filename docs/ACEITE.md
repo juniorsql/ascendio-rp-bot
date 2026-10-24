@@ -4,7 +4,7 @@ Execute esta lista depois de configurar as contas. Estes itens **não foram test
 
 1. Confirme Node >=24.17.0, `DATA_DIR=/data/ascendio`, Server Members Intent e permissões do bot nos canais.
 2. Faça deploy e confira `bot_online` e `commands_registered` sem erros posteriores. Execute `/ajuda` no servidor correto.
-3. Configure recepção e regras. Faça uma conta humana de teste entrar no servidor; confira a menção individual, nome, orientação e rodapé. Nenhuma recepção deve ser publicada por entrada de outro bot.
+3. Configure recepção e regras. Faça uma conta humana de teste entrar no servidor; confira a menção individual, nome e orientação, sem assinatura no rodapé. Nenhuma recepção deve ser publicada por entrada de outro bot.
 4. Crie `/anuncio` e confira que o formulário e a prévia são privados. Teste texto Markdown, campos, imagem e miniatura públicos. Mude a cor, edite o conteúdo e confirme. Verifique o canal e o link retornado.
 5. Crie outra prévia e cancele. Nenhuma mensagem pública deve aparecer.
 6. Confirme rapidamente duas vezes. Deve existir uma só publicação. Tente o mesmo conteúdo no mesmo canal em menos de dez minutos; a duplicata deve ser bloqueada.

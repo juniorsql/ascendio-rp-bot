@@ -49,7 +49,6 @@ async function configCommand(i: ChatInputCommandInteraction, ctx: Context) {
   const sub = i.options.getSubcommand();
   if (sub === 'identidade') return i.showModal(form('cfg:identity', 'Identidade da comunidade', [
     { id: 'name', label: 'Nome do servidor', value: config.name, max: 80 },
-    { id: 'footer', label: 'Rodapé padrão', value: config.footer, max: 200 },
     { id: 'logo', label: 'Logotipo original (HTTPS)', value: config.logo, max: 2048, required: false },
   ]));
   if (sub === 'boas-vindas') return i.showModal(form('cfg:welcome', 'Mensagem de boas-vindas', [
@@ -60,7 +59,6 @@ async function configCommand(i: ChatInputCommandInteraction, ctx: Context) {
     const kind = kindOf(i.options.getString('tipo', true)); const t = config.templates[kind];
     return i.showModal(form(`cfg:template:${kind}`, 'Template de publicação', [
       { id: 'color', label: 'Cor hexadecimal', value: `#${t.color.toString(16).padStart(6, '0')}`, max: 7 },
-      { id: 'footer', label: 'Rodapé (vazio usa o padrão)', value: t.footer, max: 200, required: false },
       { id: 'image', label: 'Imagem padrão (HTTPS)', value: t.image, max: 2048, required: false },
       { id: 'thumbnail', label: 'Miniatura padrão (HTTPS)', value: t.thumbnail, max: 2048, required: false },
     ]));
@@ -105,11 +103,11 @@ async function configModal(i: ModalSubmitInteraction, ctx: Context) {
   const [, action, key] = i.customId.split(':');
   const value = (name: string) => i.fields.getTextInputValue(name).trim();
   await changed(ctx, i.user.id, `config_${action}`, c => {
-    if (action === 'identity') { c.name = text(value('name'), 80); c.footer = text(value('footer'), 200); c.logo = imageUrl(value('logo')); }
+    if (action === 'identity') { c.name = text(value('name'), 80); c.logo = imageUrl(value('logo')); }
     else if (action === 'welcome') { c.welcomeTitle = text(value('title'), 200); c.welcomeText = text(value('body'), 2500); }
     else if (action === 'template') {
       const kind = kindOf(key ?? '');
-      c.templates[kind] = { color: color(value('color')), footer: text(value('footer'), 200, 'Rodapé', 0), image: imageUrl(value('image')), thumbnail: imageUrl(value('thumbnail')) };
+      c.templates[kind] = { color: color(value('color')), footer: c.templates[kind].footer, image: imageUrl(value('image')), thumbnail: imageUrl(value('thumbnail')) };
     } else if (action === 'rule') {
       const index = Number(key); if (!Number.isInteger(index) || !c.rules[index]) throw new UserError('Categoria inválida.');
       if (!['sim', 'nao', 'não'].includes(value('official').toLowerCase())) throw new UserError('Informe sim ou nao para o status oficial.');

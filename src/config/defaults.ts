@@ -6,6 +6,7 @@ export const labels: Record<Kind, string> = {
   regras: 'Regras', novidade: 'Novidades da comunidade',
 };
 export const palette = { dourado: 0xb49a61, preto: 0x151416, bordo: 0x672d3b, noturno: 0x202f4b, marfim: 0xe9dfc8 };
+// Os campos footer são mantidos para ler configurações e backups anteriores; não são renderizados.
 export interface Template { color: number; footer: string; image: string; thumbnail: string }
 export interface Rule { title: string; content: string; official: boolean }
 export interface Config {

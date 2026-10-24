@@ -108,9 +108,10 @@ test('confirmação em andamento impede cancelamento concorrente', async t => {
 });
 test('configuração por formulário persiste identidade e regra aprovada', async t => {
   const f = await setup(t); f.setPermissions(PermissionFlagsBits.ManageGuild);
-  const identity: Record<string, string> = { name: 'Ascendio RP', footer: 'Tradição e novas histórias.', logo: 'https://example.com/brasao.png' };
+  const identity: Record<string, string> = { name: 'Ascendio RP • Comunidade', logo: 'https://example.com/brasao.png' };
   await onInteraction(f.interaction('modal', { customId: 'cfg:identity', fields: { getTextInputValue: (key: string) => identity[key] } }), f.ctx);
-  assert.equal(f.ctx.store.snapshot().config.footer, identity.footer);
+  assert.equal(f.ctx.store.snapshot().config.name, identity.name);
+  assert.equal(f.ctx.store.snapshot().config.logo, identity.logo);
   const rule: Record<string, string> = { title: 'Regras gerais', body: 'Texto oficial fornecido pela administração.', official: 'sim' };
   await onInteraction(f.interaction('modal', { customId: 'cfg:rule:0', fields: { getTextInputValue: (key: string) => rule[key] } }), f.ctx);
   assert.equal(f.ctx.store.snapshot().config.rules[0]!.official, true);
