@@ -2,6 +2,8 @@
 
 Bot modular de Discord para a comunidade brasileira Ascendio RP. Publicações em português, identidade sóbria em dourado, bordô, azul-noturno e marfim, boas-vindas automáticas e configuração pelo próprio Discord.
 
+A partir da versão **1.2.0**, inclui central de tickets com Suporte, Doações, Solicitar RP e Reportar bug. Consulte [TICKETS.md](docs/TICKETS.md) para equipes, privacidade, arquivamento e recuperação.
+
 **Estado da entrega:** implementação, verificações locais, publicação no GitHub, autenticação real, registro dos comandos e deploy gratuito executados. O acesso aos canais privados de boas-vindas e logs foi confirmado; o aceite final do fluxo com membros reais e publicações pela equipe permanece em aberto. O token não faz parte do repositório. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para as verificações e pendências.
 
 ## 1. Requisitos e versões
@@ -22,7 +24,7 @@ A FadeHost deste deploy usa Node 22.23.4 no ambiente padrão. Por isso o projeto
 3. Em **Bot**, crie/redefina o token e salve-o diretamente no `.env` local ou no campo secreto da FadeHost. Nunca cole o token no chat, em issues, capturas ou commits.
 4. Em **Bot → Privileged Gateway Intents**, habilite **Server Members Intent**, necessário para receber entradas de membros. O código usa apenas `Guilds` e `GuildMembers`. Deixe **Message Content** e **Presence Intent** desligados.
 5. No Discord, ative **Configurações do usuário → Avançado → Modo desenvolvedor**. Clique com o botão direito no servidor → **Copiar ID**: será `DISCORD_GUILD_ID`.
-6. Em **Installation** ou **OAuth2 → URL Generator**, escolha instalação em servidor e os escopos `bot` e `applications.commands`. Marque somente **View Channels**, **Send Messages** e **Embed Links**. Não é necessário conceder Administrator, Manage Roles ou Manage Messages ao bot.
+6. Em **Installation** ou **OAuth2 → URL Generator**, escolha instalação em servidor e os escopos `bot` e `applications.commands`. Publicações precisam de **View Channels**, **Send Messages** e **Embed Links**. Para tickets, acrescente **Manage Channels**, **Manage Roles** (gerenciar permissões), **Read Message History**, **Attach Files** e **Add Reactions**; veja os acessos por categoria em [TICKETS.md](docs/TICKETS.md). Não é necessário conceder Administrator.
 7. Abra a URL gerada e escolha o servidor correto. Exemplo de formato, substituindo o ID:
 
 ```text

@@ -8,7 +8,7 @@ Data: **23/10/2026**, horário de referência America/Sao_Paulo.
 | --- | --- |
 | Instalação das dependências pelo npm | Concluída; lockfile criado |
 | TypeScript estrito, incluindo fontes e testes | Passou |
-| Testes automatizados, incluindo notificação opcional | **35 passaram, 0 falharam** |
+| Testes automatizados, incluindo notificação opcional e tickets | **48 passaram, 0 falharam** |
 | Compilação para `dist/` | Passou |
 | Testes executados diretamente com Node 24.22.1 | 28 passaram |
 | Criação e destruição de cliente Discord sem login, heap V8 de 128 MB | Passou; RSS observado de aproximadamente **76 MB** |
@@ -67,3 +67,9 @@ npm audit
 Na entrega inicial de 23/10/2026 ainda não havia credenciais ou contas conectadas. As etapas efetivamente realizadas em 24/10 estão registradas acima. A execução de CI do commit de runtime foi impedida pelo GitHub: a anotação do job informa bloqueio da conta por questão de cobrança. A CI remota não foi considerada aprovada. Os testes locais estão registrados separadamente; a compilação e o início na FadeHost foram confirmados nos logs. A cobrança da conta GitHub deve ser revisada pelo titular para que o Actions volte a executar.
 
 Use [ACEITE.md](ACEITE.md) para concluir e registrar a homologação operacional. Os critérios que exigem bot online ainda dependem desse aceite.
+
+## Tickets — 24/10/2026
+
+- 13 testes adicionais: painel idempotente, privacidade e isolamento, usuário comum, concorrência, duplicidade entre assuntos, falta de disco, criação com resultado incerto, recuperação após reinício, permissões atuais de equipe, fechamento somente leitura, logs indisponíveis, categoria cheia e estado corrompido.
+- Teste real pela API do Discord usando um canal temporário privado: abertura, bloqueio de @everyone, recuperação com outro objeto de armazenamento, retorno do mesmo ticket para outro assunto, assumir atendimento, fechamento somente leitura, mudança de categoria e registro privado passaram. Canal e mensagem de registro temporários foram removidos ao concluir.
+- O teste real invocou os serviços internos autenticados. O formulário e roteamento de interações são cobertos por testes simulados; o clique no painel pela conta humana ainda precisa do aceite do responsável.

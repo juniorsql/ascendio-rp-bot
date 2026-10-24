@@ -6,6 +6,8 @@ import { onInteraction } from './commands/handler.js';
 import { onMemberAdd } from './events/welcome.js';
 import { register } from './utils/registration.js';
 import { errorCode, log } from './logs/logger.js';
+import { TicketStore, ticketSeed } from './tickets/store.js';
+import { Tickets } from './tickets/service.js';
 async function main(): Promise<void> {
   const [major, minor] = process.versions.node.split('.').map(Number);
   if (major !== 24 || (minor ?? 0) < 17) throw new Error('NodeRuntimeMismatch: execute npm ci e npm start para usar o Node 24 incluído no projeto.');
@@ -19,7 +21,10 @@ async function main(): Promise<void> {
     sweepers: { ...Options.DefaultSweeperSettings, users: { interval: 300, filter: () => user => user.id !== user.client.user?.id }, guildMembers: { interval: 300, filter: () => member => member.id !== member.client.user?.id } },
     rest: { timeout: 15_000, retries: 2 },
   });
-  const ctx = { client, env, store, drafts: new Drafts() };
+  const ticketStore = new TicketStore(env.dataDir);
+  await ticketStore.init(ticketSeed(process.env.TICKETS_CONFIG));
+  const tickets = new Tickets(client, env.guildId, ticketStore);
+  const ctx = { client, env, store, drafts: new Drafts(), tickets };
   let registered = false;
   client.once(Events.ClientReady, async ready => {
     if (ready.user.id !== env.clientId) { log('application_id_mismatch', {}, 'error'); await shutdown(1); return; }
@@ -28,19 +33,26 @@ async function main(): Promise<void> {
     if (env.register && !registered) {
       try { await register(env); registered = true; } catch (error) { log('registration_failed', { code: errorCode(error) }, 'error'); }
     }
+    if (ticketStore.snapshot().config.panelChannelId) {
+      try { await tickets.recover(); const messageId = await tickets.ensurePanel(); log('tickets_ready', { messageId }); }
+      catch (error) { log('tickets_setup_failed', { code: errorCode(error) }, 'error'); }
+    }
   });
   client.on(Events.InteractionCreate, i => { void onInteraction(i, ctx); });
   client.on(Events.GuildMemberAdd, member => { void onMemberAdd(member, ctx); });
   client.on(Events.Error, error => log('discord_client_error', { code: errorCode(error) }, 'error'));
   client.on(Events.ShardError, error => log('discord_gateway_error', { code: errorCode(error) }, 'error'));
-  const timer = setInterval(() => { ctx.drafts.sweep(); log('health', { rssMB: Math.round(process.memoryUsage().rss / 1048576) }); }, 300_000);
+  const timer = setInterval(() => {
+    ctx.drafts.sweep(); log('health', { rssMB: Math.round(process.memoryUsage().rss / 1048576) });
+    void tickets.recover().catch(error => log('ticket_recovery_failed', { code: errorCode(error) }, 'warn'));
+  }, 300_000);
   timer.unref();
   let stopping = false;
   async function shutdown(code = 0) {
     if (stopping) return;
     stopping = true; clearInterval(timer);
     const deadline = setTimeout(() => process.exit(1), 20_000); deadline.unref();
-    await client.destroy(); await store.idle();
+    await client.destroy(); await store.idle(); await ticketStore.idle();
     clearTimeout(deadline); process.exitCode = code;
     log('bot_stopped');
   }
