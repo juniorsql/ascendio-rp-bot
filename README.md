@@ -107,7 +107,11 @@ Alterações são persistidas imediatamente e não exigem recompilação. Os IDs
 
 ### Publicar
 
-Escolha um comando e o canal. O formulário possui título, descrição Markdown, imagem, miniatura e campos adicionais. Para campos, use uma linha por campo:
+Escolha um comando e o canal. O formulário possui título, descrição Markdown, imagem, miniatura e campos adicionais.
+
+O embed exibe somente o título preenchido pela equipe, sem repetir o nome do servidor em um cabeçalho automático. A assinatura da comunidade permanece no rodapé. Por exemplo, use **REGULAMENTO DA COMUNIDADE** como título.
+
+Para campos, use uma linha por campo:
 
 ```text
 Data | 31/10, às 20h (Brasília) | sim

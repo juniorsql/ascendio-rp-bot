@@ -1,5 +1,5 @@
 import type { APIEmbed } from 'discord.js';
-import { labels, palette, type Config, type Kind } from '../config/defaults.js';
+import { palette, type Config, type Kind } from '../config/defaults.js';
 import { safeText, validateEmbeds } from '../validation/input.js';
 export interface Post { kind: Kind; title: string; description: string; image: string; thumbnail: string; fields: NonNullable<APIEmbed['fields']>; color?: number }
 export function postEmbed(post: Post, config: Config): APIEmbed[] {
@@ -7,7 +7,6 @@ export function postEmbed(post: Post, config: Config): APIEmbed[] {
   const image = post.image || t.image;
   const thumbnail = post.thumbnail || t.thumbnail || config.logo;
   const embed: APIEmbed = {
-    author: { name: safeText(`${config.name.toUpperCase()} | ${labels[post.kind].toUpperCase()}`) },
     title: safeText(post.title), description: safeText(post.description), color: post.color ?? t.color,
     fields: post.fields.map(f => ({ ...f, name: safeText(f.name), value: safeText(f.value) })),
     footer: { text: safeText(t.footer || config.footer) }, timestamp: new Date().toISOString(),
