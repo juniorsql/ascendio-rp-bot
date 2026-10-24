@@ -25,6 +25,7 @@ export function controls(draft: Draft) {
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(`confirm:${draft.id}`).setLabel('Publicar').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`cancel:${draft.id}`).setLabel('Cancelar').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`notify:${draft.id}`).setLabel(draft.notifyEveryone ? 'Desativar @everyone' : 'Ativar @everyone').setStyle(draft.notifyEveryone ? ButtonStyle.Primary : ButtonStyle.Secondary),
   );
   if (!draft.post) return [row];
   row.addComponents(new ButtonBuilder().setCustomId(`edit:${draft.id}`).setLabel('Editar conteúdo').setStyle(ButtonStyle.Primary));

@@ -16,9 +16,12 @@ async function setup(t: { after: (fn: () => Promise<void>) => void }) {
   const store = new Store(dir); await store.init();
   const sent: any[] = [], replies: any[] = [];
   let bits = PermissionFlagsBits.ManageMessages;
+  let authorChannelBits: bigint = PermissionFlagsBits.Administrator;
+  let botChannelBits: bigint = PermissionFlagsBits.Administrator;
   const member = { id: userId, permissions: new PermissionsBitField(bits), roles: { cache: new Map() } };
-  const guild = { id: guildId, members: { me: { id: 'bot' }, fetch: async () => { member.permissions = new PermissionsBitField(bits); return member; } } };
-  const channel = { id: channelId, type: ChannelType.GuildText, guildId, guild, permissionsFor: () => new PermissionsBitField(PermissionFlagsBits.Administrator), send: async (body: any) => { sent.push(body); return { id: '423456789012345678' }; } };
+  const botMember = { id: 'bot' };
+  const guild = { id: guildId, members: { me: botMember, fetchMe: async () => botMember, fetch: async () => { member.permissions = new PermissionsBitField(bits); return member; } } };
+  const channel = { id: channelId, type: ChannelType.GuildText, guildId, guild, permissionsFor: (who?: { id: string }) => new PermissionsBitField(who?.id === 'bot' ? botChannelBits : authorChannelBits), send: async (body: any) => { sent.push(body); return { id: '423456789012345678' }; } };
   const ctx = { store, drafts: new Drafts(), env: { guildId }, client: { channels: { fetch: async () => channel } } } as unknown as Context;
   const interaction = (kind: Kind, options: Record<string, any> = {}): Interaction => {
     const i: any = { user: { id: userId }, guildId, guild, replied: false, deferred: false,
@@ -32,7 +35,11 @@ async function setup(t: { after: (fn: () => Promise<void>) => void }) {
       options: { getChannel: () => ({ id: channelId }), getString: () => 'comunicado' }, ...options,
     }; return i;
   };
-  return { ctx, sent, replies, interaction, member, channel, setPermissions: (b: bigint) => { bits = b; } };
+  return { ctx, sent, replies, interaction, member, channel, setPermissions: (b: bigint) => { bits = b; }, setMentionPermissions: (author: boolean, bot: boolean) => {
+    const base = PermissionFlagsBits.ViewChannel | PermissionFlagsBits.SendMessages | PermissionFlagsBits.EmbedLinks;
+    authorChannelBits = base | (author ? PermissionFlagsBits.MentionEveryone : 0n);
+    botChannelBits = base | (bot ? PermissionFlagsBits.MentionEveryone : 0n);
+  } };
 }
 test('fluxo /anuncio → modal → prévia privada → confirmação envia embed uma vez', async t => {
   const f = await setup(t);
@@ -45,6 +52,7 @@ test('fluxo /anuncio → modal → prévia privada → confirmação envia embed
   const customId = preview.components[0].toJSON().components[0].custom_id;
   await onInteraction(f.interaction('button', { customId }), f.ctx);
   assert.equal(f.sent.length, 1); assert.deepEqual(f.sent[0].allowedMentions.parse, []); assert.equal(f.sent[0].enforceNonce, true);
+  assert.equal(f.sent[0].content, undefined);
   assert.ok(!f.sent[0].embeds[0].description.includes('@everyone')); assert.equal(f.ctx.store.snapshot().receipts[0]!.status, 'sent');
   await onInteraction(f.interaction('button', { customId }), f.ctx); assert.equal(f.sent.length, 1);
 });
@@ -124,4 +132,72 @@ test('publicação de regras exige confirmação e preserva aviso de demonstraç
   await onInteraction(f.interaction('button', { customId }), f.ctx);
   assert.equal(f.sent.length, 1); assert.equal(f.sent[0].embeds.length, 8);
   for (const embed of f.sent[0].embeds) assert.match(embed.description, /NÃO OFICIAL/);
+});
+test('everyone começa desligado e sua ativação só notifica após confirmação', async t => {
+  const f = await setup(t); f.setMentionPermissions(true, true);
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, embeds: [{ title: 'Convocação' }] });
+  assert.equal(d.notifyEveryone, false);
+  await onInteraction(f.interaction('button', { customId: `notify:${d.id}` }), f.ctx);
+  assert.equal(d.notifyEveryone, true); assert.equal(f.sent.length, 0);
+  assert.match(f.replies[0].content, /@everyone ATIVADO/);
+  assert.deepEqual(f.replies[0].allowedMentions.parse, []);
+  const buttons = f.replies[0].components[0].toJSON().components;
+  assert.ok(buttons.some((b: any) => b.label === 'Desativar @everyone'));
+  await onInteraction(f.interaction('button', { customId: `confirm:${d.id}` }), f.ctx);
+  assert.equal(f.sent.length, 1); assert.equal(f.sent[0].content, '@everyone');
+  assert.deepEqual(f.sent[0].allowedMentions, { parse: ['everyone'], users: [], roles: [], repliedUser: false });
+  assert.ok(f.ctx.store.snapshot().audit.some(a => a.action === 'publication_sent_everyone'));
+});
+test('everyone pode ser desativado antes de publicar', async t => {
+  const f = await setup(t); f.setMentionPermissions(true, true);
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, embeds: [{ title: 'Convocação' }] });
+  await onInteraction(f.interaction('button', { customId: `notify:${d.id}` }), f.ctx);
+  // Desativar permanece possível mesmo se a permissão de menção for removida.
+  f.setMentionPermissions(false, false);
+  await onInteraction(f.interaction('button', { customId: `notify:${d.id}` }), f.ctx);
+  assert.equal(d.notifyEveryone, false);
+  await onInteraction(f.interaction('button', { customId: `confirm:${d.id}` }), f.ctx);
+  assert.equal(f.sent[0].content, undefined); assert.deepEqual(f.sent[0].allowedMentions.parse, []);
+});
+test('everyone exige permissão do autor no canal, além de ser publicador', async t => {
+  const f = await setup(t); f.setMentionPermissions(false, true);
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, embeds: [{ title: 'Convocação' }] });
+  await onInteraction(f.interaction('button', { customId: `notify:${d.id}` }), f.ctx);
+  assert.equal(d.notifyEveryone, false); assert.equal(f.sent.length, 0); assert.equal(d.busy, false);
+  assert.match(f.replies.at(-1).content, /você precisa de Mencionar todos/);
+});
+test('everyone exige permissão do bot no canal', async t => {
+  const f = await setup(t); f.setMentionPermissions(true, false);
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, embeds: [{ title: 'Convocação' }] });
+  await onInteraction(f.interaction('button', { customId: `notify:${d.id}` }), f.ctx);
+  assert.equal(d.notifyEveryone, false); assert.equal(f.sent.length, 0);
+  assert.match(f.replies.at(-1).content, /O bot precisa da permissão Mencionar todos/);
+});
+test('permissões de everyone são conferidas novamente ao confirmar', async t => {
+  for (const [author, bot] of [[false, true], [true, false]]) {
+    const f = await setup(t); f.setMentionPermissions(true, true);
+    const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, embeds: [{ title: 'Convocação' }] });
+    await onInteraction(f.interaction('button', { customId: `notify:${d.id}` }), f.ctx);
+    f.setMentionPermissions(author!, bot!);
+    await onInteraction(f.interaction('button', { customId: `confirm:${d.id}` }), f.ctx);
+    assert.equal(f.sent.length, 0); assert.equal(f.ctx.store.snapshot().receipts.length, 0); assert.equal(d.busy, false);
+    assert.match(f.replies.at(-1).content, /Mencionar todos/);
+  }
+});
+test('erro ao atualizar a prévia não ativa everyone silenciosamente', async t => {
+  const f = await setup(t); f.setMentionPermissions(true, true);
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, embeds: [{ title: 'Convocação' }] });
+  await onInteraction(f.interaction('button', { customId: `notify:${d.id}`, editReply: async () => { throw new Error('Prévia indisponível'); } }), f.ctx);
+  assert.equal(d.notifyEveryone, false); assert.equal(f.sent.length, 0); assert.equal(d.busy, false);
+});
+test('alternar everyone não ultrapassa uma confirmação em andamento', async t => {
+  const f = await setup(t); f.setMentionPermissions(true, true);
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, embeds: [{ title: 'Convocação' }] });
+  let release!: () => void; const barrier = new Promise<void>(resolve => { release = resolve; });
+  let entered!: () => void; const started = new Promise<void>(resolve => { entered = resolve; });
+  const pending = onInteraction(f.interaction('button', { customId: `confirm:${d.id}`, deferUpdate: async () => { entered(); await barrier; } }), f.ctx);
+  await started;
+  await onInteraction(f.interaction('button', { customId: `notify:${d.id}` }), f.ctx);
+  assert.equal(d.notifyEveryone, false); release(); await pending;
+  assert.equal(f.sent.length, 1); assert.equal(f.sent[0].content, undefined);
 });

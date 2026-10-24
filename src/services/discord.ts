@@ -6,10 +6,15 @@ export function authorized(member: Pick<GuildMember, 'permissions' | 'roles'>, c
     || (!configure && config.adminRoleIds.some(id => member.roles.cache.has(id)));
 }
 export async function target(client: Client, guildId: string, channelId: string): Promise<GuildTextBasedChannel & { type: ChannelType.GuildText | ChannelType.GuildAnnouncement }> {
-  const ch = await client.channels.fetch(channelId);
+  const ch = await client.channels.fetch(channelId, { force: true });
   if (!ch || !('guildId' in ch) || ch.guildId !== guildId || (ch.type !== ChannelType.GuildText && ch.type !== ChannelType.GuildAnnouncement)) throw new UserError('Selecione um canal de texto ou de anúncios deste servidor.');
   const me = ch.guild.members.me ?? await ch.guild.members.fetchMe();
   const needed = new PermissionsBitField([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks]);
   if (!ch.permissionsFor(me)?.has(needed)) throw new UserError('O bot precisa de Ver canal, Enviar mensagens e Inserir links no destino.');
   return ch;
+}
+export async function assertEveryonePermissions(channel: Awaited<ReturnType<typeof target>>, member: GuildMember): Promise<void> {
+  if (!channel.permissionsFor(member)?.has(PermissionFlagsBits.MentionEveryone)) throw new UserError('Para usar @everyone, você precisa de Mencionar todos no canal de destino.');
+  const me = await channel.guild.members.fetchMe({ force: true });
+  if (!channel.permissionsFor(me)?.has(PermissionFlagsBits.MentionEveryone)) throw new UserError('O bot precisa da permissão Mencionar todos no canal de destino para publicar com @everyone.');
 }

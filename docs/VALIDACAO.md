@@ -8,7 +8,7 @@ Data: **23/10/2026**, horário de referência America/Sao_Paulo.
 | --- | --- |
 | Instalação das dependências pelo npm | Concluída; lockfile criado |
 | TypeScript estrito, incluindo fontes e testes | Passou |
-| Testes automatizados | **28 passaram, 0 falharam** |
+| Testes automatizados, incluindo notificação opcional | **35 passaram, 0 falharam** |
 | Compilação para `dist/` | Passou |
 | Testes executados diretamente com Node 24.22.1 | 28 passaram |
 | Criação e destruição de cliente Discord sem login, heap V8 de 128 MB | Passou; RSS observado de aproximadamente **76 MB** |
@@ -31,6 +31,9 @@ O computador tinha Node 24.14.1; o Node 24.22.1 foi executado pontualmente pelo 
 - Deduplicação por conteúdo/canal, reserva antes da API e persistência de envio incerto após reinício.
 - Falha de disco anterior ao envio, estado inválido, serialização de transações e retenção da auditoria.
 - Logs que não serializam o conteúdo de erros REST.
+- Ativação e desativação explícita de `@everyone`, prévia sem notificações e envio somente após confirmação; bloqueio por permissão do autor ou do bot, inclusive quando removida após ativar; falha na atualização da prévia sem ativação silenciosa; trava contra alteração durante envio e deduplicação preservada ao alternar a notificação.
+
+O caminho de publicação com `@everyone` foi testado com canais simulados. Nenhuma notificação coletiva foi enviada automaticamente ao servidor durante o desenvolvimento.
 
 Os fluxos de Discord são simulados com interações e canais controlados. Eles exercitam o roteamento real do código, mas não comprovam aceitação dos payloads ou eventos pelo serviço remoto.
 

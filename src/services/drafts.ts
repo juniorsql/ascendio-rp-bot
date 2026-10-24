@@ -1,16 +1,16 @@
 import { randomUUID, createHash } from 'node:crypto';
-import type { APIEmbed } from 'discord.js';
+import type { APIEmbed, MessageCreateOptions } from 'discord.js';
 import { UserError, validateEmbeds } from '../validation/input.js';
 import type { Post } from '../templates/embeds.js';
 import type { Store } from './store.js';
-export interface Draft { id: string; ownerId: string; guildId: string; channelId: string; expiresAt: number; post?: Post; embeds: APIEmbed[]; busy: boolean }
+export interface Draft { id: string; ownerId: string; guildId: string; channelId: string; expiresAt: number; post?: Post; embeds: APIEmbed[]; busy: boolean; notifyEveryone: boolean }
 export class Drafts {
   private items = new Map<string, Draft>();
   constructor(private now = () => Date.now()) {}
-  create(input: Omit<Draft, 'id' | 'expiresAt' | 'busy'>): Draft {
+  create(input: Omit<Draft, 'id' | 'expiresAt' | 'busy' | 'notifyEveryone'>): Draft {
     this.sweep();
     if (this.items.size >= 100 || [...this.items.values()].filter(d => d.ownerId === input.ownerId).length >= 5) throw new UserError('Limite de rascunhos. Cancele uma prévia ou aguarde 15 minutos.');
-    const draft = { ...input, id: randomUUID(), expiresAt: this.now() + 15 * 60_000, busy: false };
+    const draft = { ...input, id: randomUUID(), expiresAt: this.now() + 15 * 60_000, busy: false, notifyEveryone: false };
     this.items.set(draft.id, draft); return draft;
   }
   get(id: string, ownerId: string, guildId: string): Draft {
@@ -25,7 +25,15 @@ export class Drafts {
 }
 export function fingerprint(d: Draft): string {
   const embeds = d.embeds.map(({ timestamp: _timestamp, ...e }) => e);
+  // Alterar a notificação não permite republicar o mesmo conteúdo dentro da janela de deduplicação.
   return createHash('sha256').update(JSON.stringify([d.guildId, d.channelId, embeds])).digest('hex');
+}
+export function publicationOptions(draft: Draft, nonce: string): MessageCreateOptions {
+  return {
+    embeds: draft.embeds, nonce, enforceNonce: true,
+    ...(draft.notifyEveryone ? { content: '@everyone' } : {}),
+    allowedMentions: { parse: draft.notifyEveryone ? ['everyone'] : [], users: [], roles: [], repliedUser: false },
+  };
 }
 export async function publish(draft: Draft, store: Store, send: (embeds: APIEmbed[], nonce: string) => Promise<{ id: string }>): Promise<string> {
   if (draft.busy) throw new UserError('Publicação em processamento.');
@@ -45,7 +53,7 @@ export async function publish(draft: Draft, store: Store, send: (embeds: APIEmbe
     await store.transact(state => {
       const receipt = state.receipts.find(r => r.draftId === draft.id)!;
       receipt.status = 'sent'; receipt.messageId = message.id;
-      state.audit.push({ time: Date.now(), action: 'publication_sent', userId: draft.ownerId, channelId: draft.channelId, messageId: message.id });
+      state.audit.push({ time: Date.now(), action: draft.notifyEveryone ? 'publication_sent_everyone' : 'publication_sent', userId: draft.ownerId, channelId: draft.channelId, messageId: message.id });
     });
     return message.id;
   } catch (error) {

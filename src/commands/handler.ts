@@ -1,10 +1,10 @@
-import { AttachmentBuilder, MessageFlags, PermissionFlagsBits, type Client, type Interaction, type ChatInputCommandInteraction, type ModalSubmitInteraction, type APIEmbed } from 'discord.js';
+import { AttachmentBuilder, MessageFlags, PermissionFlagsBits, type Client, type Interaction, type ChatInputCommandInteraction, type ModalSubmitInteraction } from 'discord.js';
 import type { Env } from '../config/env.js';
 import { kinds, palette, type Kind } from '../config/defaults.js';
 import { controls, form, postForm } from '../components/forms.js';
 import { errorCode, log } from '../logs/logger.js';
-import { Drafts, publish, type Draft } from '../services/drafts.js';
-import { authorized, target } from '../services/discord.js';
+import { Drafts, publish, publicationOptions, type Draft } from '../services/drafts.js';
+import { authorized, target, assertEveryonePermissions } from '../services/discord.js';
 import type { Store } from '../services/store.js';
 import { postEmbed, rulesEmbeds, welcomeEmbed, type Post } from '../templates/embeds.js';
 import { color, fields, imageUrl, safeText, text, UserError } from '../validation/input.js';
@@ -41,7 +41,8 @@ async function changed(ctx: Context, userId: string, action: string, mutate: (co
   await audit(ctx, userId, action);
 }
 function preview(d: Draft) {
-  return { content: `**PRÉVIA PRIVADA** • Destino: <#${d.channelId}>\nConfira o conteúdo antes de publicar. Expira em 15 minutos a partir da criação.`, embeds: d.embeds, components: controls(d), allowedMentions: none };
+  const notification = d.notifyEveryone ? '**@everyone ATIVADO:** ao clicar em Publicar, a mensagem mencionará todos no canal de destino.' : 'Notificação @everyone: desativada.';
+  return { content: `**PRÉVIA PRIVADA** • Destino: <#${d.channelId}>\n${notification}\nConfira o conteúdo antes de publicar. Expira em 15 minutos a partir da criação.`, embeds: d.embeds, components: controls(d), allowedMentions: none };
 }
 async function configCommand(i: ChatInputCommandInteraction, ctx: Context) {
   const config = ctx.store.snapshot().config;
@@ -158,16 +159,31 @@ async function handle(i: Interaction, ctx: Context) {
   const [action, id] = i.customId.split(':');
   const draft = ctx.drafts.get(id!, i.user.id, ctx.env.guildId);
   if (i.isButton() && action === 'edit') return i.showModal(postForm(`post:edit:${draft.id}`, draft));
+  if (i.isButton() && action === 'notify') {
+    draft.busy = true;
+    try {
+      await i.deferUpdate();
+      if (!draft.notifyEveryone) {
+        const ch = await destination(i, ctx, draft.channelId);
+        await assertEveryonePermissions(ch, await currentMember(i, ctx));
+      }
+      const enabled = !draft.notifyEveryone;
+      const reply = await i.editReply(preview({ ...draft, notifyEveryone: enabled }));
+      draft.notifyEveryone = enabled;
+      return reply;
+    } finally { draft.busy = false; }
+  }
   if (i.isButton() && action === 'confirm') {
     // Trava antes da primeira espera: cancelar/editar não pode ultrapassar a confirmação.
     draft.busy = true;
     try {
       await i.deferUpdate();
       const ch = await destination(i, ctx, draft.channelId);
+      if (draft.notifyEveryone) await assertEveryonePermissions(ch, await currentMember(i, ctx));
       draft.busy = false;
-      const messageId = await publish(draft, ctx.store, (embeds: APIEmbed[], nonce: string) => ch.send({ embeds, allowedMentions: none, nonce, enforceNonce: true }));
+      const messageId = await publish(draft, ctx.store, (_embeds, nonce) => ch.send(publicationOptions(draft, nonce)));
       ctx.drafts.remove(draft.id);
-      await audit(ctx, i.user.id, 'publication_sent', ch.id, messageId);
+      await audit(ctx, i.user.id, draft.notifyEveryone ? 'publication_sent_everyone' : 'publication_sent', ch.id, messageId);
       return i.editReply({ content: `Publicação enviada: https://discord.com/channels/${ctx.env.guildId}/${ch.id}/${messageId}`, embeds: [], components: [] });
     } finally { draft.busy = false; }
   }

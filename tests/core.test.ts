@@ -112,7 +112,8 @@ test('duplo clique e rascunhos idênticos resultam em um único envio', async t 
 });
 test('deduplicação ignora a data e inclui o canal', () => {
   const a = makeDraft(), b = makeDraft(); b.embeds[0]!.timestamp = '2020-01-01T00:00:00.000Z';
-  assert.equal(fingerprint(a), fingerprint(b)); b.channelId = ownerId; assert.notEqual(fingerprint(a), fingerprint(b));
+  assert.equal(fingerprint(a), fingerprint(b)); b.notifyEveryone = true; assert.equal(fingerprint(a), fingerprint(b));
+  b.channelId = ownerId; assert.notEqual(fingerprint(a), fingerprint(b));
 });
 test('falha de rede mantém reserva através de reinício e bloqueia nova tentativa', async t => {
   const { dir, store } = await fixture(t);

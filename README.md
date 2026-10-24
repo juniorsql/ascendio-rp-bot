@@ -117,7 +117,15 @@ Inscrições | Consulte a equipe responsável | nao
 
 São permitidos dez campos no formulário. `sim` exibe o campo lado a lado quando o Discord tiver espaço. Use URLs HTTPS de arquivos de imagem públicos. O bot valida o endereço, mas não baixa a imagem e não verifica seu MIME, existência ou licença; a renderização depende do Discord. Domínios podem resolver para redes privadas: o bot nunca os acessa diretamente. Use preferencialmente o CDN do Discord ou um provedor público da comunidade.
 
-A prévia é privada, informa o destino e oferece **Publicar**, **Cancelar**, **Editar conteúdo** e um menu de cores. Ela expira 15 minutos após a criação. Há até cinco rascunhos por autor e cem no total; rascunhos não sobrevivem ao reinício. Nenhuma publicação é enviada antes da confirmação. Um rascunho preserva o conteúdo visual aprovado; mudanças posteriores na configuração só se refletem quando ele é editado ou recriado.
+A prévia é privada, informa o destino e oferece **Publicar**, **Cancelar**, **Editar conteúdo**, **Ativar @everyone** e um menu de cores. Ela expira 15 minutos após a criação. Há até cinco rascunhos por autor e cem no total; rascunhos não sobrevivem ao reinício. Nenhuma publicação é enviada antes da confirmação. Um rascunho preserva o conteúdo visual aprovado; mudanças posteriores na configuração só se refletem quando ele é editado ou recriado.
+
+### Notificar com @everyone
+
+A notificação começa **desativada em toda nova prévia**. Clique em **Ativar @everyone** para incluí-la e confira o aviso na prévia. O botão muda para **Desativar @everyone**, permitindo rever a escolha antes de publicar. A prévia não envia notificações; a menção é adicionada como texto acima do embed somente quando o autor clica em **Publicar**.
+
+Além da autorização para publicar, **o autor e o bot precisam de Mencionar todos no canal de destino**. Essa permissão é verificada na ativação e novamente na confirmação. A falta da permissão impede a publicação com menção, sem descartá-la silenciosamente. Para publicar sem notificar, desative a opção e confirme novamente. O Discord pode limitar notificações conforme as configurações dos membros.
+
+Digitar `@everyone` no título ou conteúdo continua sem gerar notificação: somente o botão habilita o envio explícito. Menções a outros usuários/cargos e `@here` não são liberadas. Ativar a opção não contorna a deduplicação de um anúncio já enviado. Publicações confirmadas com notificação são identificadas como `publication_sent_everyone` no histórico e no canal de logs.
 
 Limites são verificados antes do envio: até dez embeds e 6.000 caracteres somados por mensagem, título de 256, descrição de 4.096 e limites dos campos. O formulário usa descrição de até 4.000; o regulamento limita cada categoria a 500 caracteres para caber em uma única mensagem. [Limites oficiais](https://docs.discord.com/developers/resources/message#embed-object).
 
@@ -130,7 +138,7 @@ Limites são verificados antes do envio: até dez embeds e 6.000 caracteres soma
 
 Os slash commands de publicação têm permissão padrão **Gerenciar mensagens**. Se quiser publicadores autorizados por cargo sem essa permissão ampla, um administrador deve também liberar esses comandos para o cargo em **Configurações do servidor → Integrações → Ascendio RP → Comandos**. A lista de cargos do bot, isoladamente, não muda a visibilidade dos comandos no Discord. Liberar a visibilidade não remove as verificações internas. Não libere `/configurar` a publicadores.
 
-Menções de usuário/cargo e `@everyone`/`@here` são neutralizadas em textos de publicação; todos os envios usam `allowedMentions` restritivo. Boas-vindas permite mencionar exclusivamente o novo membro. Entradas de outros bots são ignoradas.
+Menções de usuário/cargo e `@everyone`/`@here` digitadas nos embeds são neutralizadas. Todos os envios usam `allowedMentions` restritivo; a única exceção nas publicações é o `@everyone` adicionado pelo botão, com as permissões e a confirmação descritas acima. Boas-vindas permite mencionar exclusivamente o novo membro. Entradas de outros bots são ignoradas.
 
 ## 5. GitHub
 
