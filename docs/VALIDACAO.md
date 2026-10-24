@@ -54,13 +54,13 @@ npm audit
 - Conexão real ao Gateway com `Guilds` e `GuildMembers` concluída; servidor Ascendios RP identificado.
 - Comandos de servidor registrados com sucesso.
 - Aplicação criada na FadeHost: `ascendio-rp-bot`, plano **free**, **256 MB**, branch `main`, dados em `/data/ascendio`, sem endereço web.
-- Primeiro deploy compilou e os logs registraram `bot_online` e `commands_registered`. O ambiente padrão da FadeHost usa Node 22.23.4; a atualização do projeto instala Node 24.22.1 como runtime local dos scripts npm.
+- O deploy atualizado compilou e os logs registraram `bot_online`, `nodeVersion: v24.22.1`, RSS de **168 MB** no início e `commands_registered`. O ambiente padrão da FadeHost usa Node 22.23.4; o projeto instala Node 24.22.1 como runtime local dos scripts npm. A medição é pontual e não constitui teste de carga.
 - Após esse ajuste: TypeScript, 28 testes, compilação e `verify:offline` passaram novamente com Node 24.22.1.
 - A verificação real de permissões encontrou `ViewChannel=false` nos canais `🚪・portão` e `📦・logs`. O bot precisa receber acesso nesses dois canais antes de homologar boas-vindas e espelhamento de auditoria.
 - Não foi simulada entrada de membro real nem enviado anúncio público automaticamente. O fluxo de prévia e confirmação continua sujeito ao aceite da equipe no Discord.
 
 ## Pendências externas originais
 
-Na entrega inicial de 23/10/2026 ainda não havia credenciais ou contas conectadas. As etapas efetivamente realizadas em 24/10 estão registradas acima. A execução de CI no primeiro push ao GitHub retornou `startup_failure`, sem motivo detalhado na API; não foi considerada aprovada. Os testes locais estão registrados separadamente.
+Na entrega inicial de 23/10/2026 ainda não havia credenciais ou contas conectadas. As etapas efetivamente realizadas em 24/10 estão registradas acima. A execução de CI do commit de runtime foi impedida pelo GitHub: a anotação do job informa bloqueio da conta por questão de cobrança. A CI remota não foi considerada aprovada. Os testes locais estão registrados separadamente; a compilação e o início na FadeHost foram confirmados nos logs. A cobrança da conta GitHub deve ser revisada pelo titular para que o Actions volte a executar.
 
 Use [ACEITE.md](ACEITE.md) para concluir e registrar a homologação operacional. Os critérios que exigem bot online ainda dependem desse aceite.
