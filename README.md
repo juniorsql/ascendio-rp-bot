@@ -2,7 +2,7 @@
 
 Bot modular de Discord para a comunidade brasileira Ascendio RP. Publicações em português, identidade sóbria em dourado, bordô, azul-noturno e marfim, boas-vindas automáticas e configuração pelo próprio Discord.
 
-**Estado da entrega:** implementação, verificações locais, publicação no GitHub, autenticação real, registro dos comandos e primeiro deploy gratuito executados. A homologação de boas-vindas e logs depende de liberar o bot nos canais privados configurados. O token não faz parte do repositório. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para as verificações e pendências.
+**Estado da entrega:** implementação, verificações locais, publicação no GitHub, autenticação real, registro dos comandos e deploy gratuito executados. O acesso aos canais privados de boas-vindas e logs foi confirmado; o aceite final do fluxo com membros reais e publicações pela equipe permanece em aberto. O token não faz parte do repositório. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para as verificações e pendências.
 
 ## 1. Requisitos e versões
 

@@ -56,7 +56,7 @@ npm audit
 - Aplicação criada na FadeHost: `ascendio-rp-bot`, plano **free**, **256 MB**, branch `main`, dados em `/data/ascendio`, sem endereço web.
 - O deploy atualizado compilou e os logs registraram `bot_online`, `nodeVersion: v24.22.1`, RSS de **168 MB** no início e `commands_registered`. O ambiente padrão da FadeHost usa Node 22.23.4; o projeto instala Node 24.22.1 como runtime local dos scripts npm. A medição é pontual e não constitui teste de carga.
 - Após esse ajuste: TypeScript, 28 testes, compilação e `verify:offline` passaram novamente com Node 24.22.1.
-- A verificação real de permissões encontrou `ViewChannel=false` nos canais `🚪・portão` e `📦・logs`. O bot precisa receber acesso nesses dois canais antes de homologar boas-vindas e espelhamento de auditoria.
+- Após o responsável ajustar o cargo do bot, a verificação real confirmou **Ver canal**, **Enviar mensagens** e **Inserir links** nos canais `🚪・portão` e `📦・logs`. A FadeHost informou o processo em execução, **145 MB de 256 MB** e **zero reinícios** nessa consulta.
 - Não foi simulada entrada de membro real nem enviado anúncio público automaticamente. O fluxo de prévia e confirmação continua sujeito ao aceite da equipe no Discord.
 
 ## Pendências externas originais
