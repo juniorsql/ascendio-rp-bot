@@ -47,8 +47,20 @@ npm audit
 
 `verify:offline` usa credenciais sintéticas somente para testar validação e arquivos. Não autentica, não registra comandos e não usa rede. Os arquivos temporários são removidos ao terminar. A auditoria de pacotes consulta o registro npm e representa o estado conhecido naquele momento.
 
-## Pendências externas
+## Implantação e conexão reais — 24/10/2026
 
-Não havia token Discord, aplicação, servidor da comunidade ou conta FadeHost conectada a esta execução. Não foi fornecido repositório remoto autorizado. Portanto não foram executados login real, registro remoto, recepção real de membro, publicação real de mensagem, push para GitHub ou deploy na FadeHost. A entrega contém scripts, configuração de CI e o procedimento manual para essas etapas; nenhum resultado remoto foi presumido.
+- Repositório publicado em `https://github.com/juniorsql/ascendio-rp-bot`, tornado público com autorização expressa do responsável. `.env` e `data/` permanecem ignorados.
+- Token validado pela API do Discord, com ID de aplicação correspondente à configuração.
+- Conexão real ao Gateway com `Guilds` e `GuildMembers` concluída; servidor Ascendios RP identificado.
+- Comandos de servidor registrados com sucesso.
+- Aplicação criada na FadeHost: `ascendio-rp-bot`, plano **free**, **256 MB**, branch `main`, dados em `/data/ascendio`, sem endereço web.
+- Primeiro deploy compilou e os logs registraram `bot_online` e `commands_registered`. O ambiente padrão da FadeHost usa Node 22.23.4; a atualização do projeto instala Node 24.22.1 como runtime local dos scripts npm.
+- Após esse ajuste: TypeScript, 28 testes, compilação e `verify:offline` passaram novamente com Node 24.22.1.
+- A verificação real de permissões encontrou `ViewChannel=false` nos canais `🚪・portão` e `📦・logs`. O bot precisa receber acesso nesses dois canais antes de homologar boas-vindas e espelhamento de auditoria.
+- Não foi simulada entrada de membro real nem enviado anúncio público automaticamente. O fluxo de prévia e confirmação continua sujeito ao aceite da equipe no Discord.
+
+## Pendências externas originais
+
+Na entrega inicial de 23/10/2026 ainda não havia credenciais ou contas conectadas. As etapas efetivamente realizadas em 24/10 estão registradas acima. A execução de CI no primeiro push ao GitHub retornou `startup_failure`, sem motivo detalhado na API; não foi considerada aprovada. Os testes locais estão registrados separadamente.
 
 Use [ACEITE.md](ACEITE.md) para concluir e registrar a homologação operacional. Os critérios que exigem bot online ainda dependem desse aceite.

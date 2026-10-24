@@ -2,18 +2,18 @@
 
 Bot modular de Discord para a comunidade brasileira Ascendio RP. Publicações em português, identidade sóbria em dourado, bordô, azul-noturno e marfim, boas-vindas automáticas e configuração pelo próprio Discord.
 
-**Estado da entrega:** implementação e verificações locais concluídas. A autenticação real, o registro remoto, o aceite com membros reais, o envio ao GitHub e o deploy dependem das contas da comunidade. Nenhum token foi solicitado ou incluído. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para o que foi efetivamente executado.
+**Estado da entrega:** implementação, verificações locais, publicação no GitHub, autenticação real, registro dos comandos e primeiro deploy gratuito executados. A homologação de boas-vindas e logs depende de liberar o bot nos canais privados configurados. O token não faz parte do repositório. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para as verificações e pendências.
 
 ## 1. Requisitos e versões
 
-- Node.js **24 LTS, a partir de 24.17.0**, preferencialmente **24.22.1**, indicado em `.nvmrc`.
+- Runtime do bot: **Node.js 24.22.1 LTS**, indicado em `.nvmrc` e instalado como dependência de produção. O Node do ambiente precisa ser >=22.12 para executar a instalação pelo npm.
 - Discord.js **14.27.0**, TypeScript **7.0.2**; versões e dependências transitivas fixadas no `package-lock.json`.
 - Um bot e um servidor Discord; uma instância deste processo para esse servidor.
-- Sem banco externo, painel web, música ou downloads de mídia. Apenas `discord.js` é dependência direta de produção.
+- Sem banco externo, painel web, música ou downloads de mídia. Dependências diretas de produção: `discord.js` e o binário do Node usado para compatibilidade com a hospedagem.
 
 A [documentação atual do Discord.js](https://discord.js.org/docs) informa Node >=24.17.0. O manifesto npm da versão consultada declara um mínimo inferior; adotamos o requisito mais conservador da documentação e verificamos o cliente com Node 24.22.1. A [linha 24 é LTS](https://nodejs.org/en/about/previous-releases).
 
-A FadeHost documenta suporte a Node.js, mas não fixa a versão instalada nem garante que `engines` ou `.nvmrc` selecionem o runtime. **Confira `node --version` no ambiente da hospedagem antes do deploy.** Caso seja inferior a 24.17.0, solicite ao suporte um runtime compatível; não há um seletor de versão confirmado nesta entrega. Não use Docker como requisito do gratuito: a documentação reserva builds de imagem aos planos pagos.
+A FadeHost deste deploy usa Node 22.23.4 no ambiente padrão. Por isso o projeto instala o pacote `node@24.22.1`: dentro dos scripts npm, o executável local tem precedência no PATH. Use **`npm start`**, para que o bot execute com Node 24; executar `node dist/index.js` diretamente com o Node 22 global será recusado. O evento `bot_online` informa `nodeVersion` para confirmar o runtime real. Mantenha os scripts de instalação habilitados em `npm ci`, pois o pacote instala o binário específico da plataforma. O binário ocupa espaço em disco; não adiciona um segundo processo Node à execução do bot. Não há Docker obrigatório no plano gratuito.
 
 ## 2. Criar a aplicação no Discord
 
@@ -165,7 +165,7 @@ DATA_DIR=/data/ascendio
 REGISTER_COMMANDS_ON_START=true
 ```
 
-5. Em **Build & start**, configure o build como `npm run build` e a inicialização como `npm start`. A documentação informa instalação de devDependencies para o build. Use `npm ci` se houver um campo próprio de instalação; mantenha o lockfile. Confira a versão de Node conforme a seção 1. Não configure `npm run dev` em produção.
+5. Em **Build & start**, configure o build como `npm run build` e a inicialização como `npm start`. A documentação informa instalação de devDependencies para o build. Use `npm ci` se houver um campo próprio de instalação; mantenha o lockfile e não use `--ignore-scripts`. Confira `nodeVersion` no evento `bot_online`, conforme a seção 1. Não configure `npm run dev` em produção.
 6. Clique em **Deploy** e acompanhe o **Console**: build concluído, `bot_online` e `commands_registered`. `bot_online` indica autenticação; o funcionamento completo depende também de `commands_registered`, dos canais e das permissões.
 7. Mantenha **Web address desativado**. Este bot usa conexão de saída para o Gateway e não necessita porta pública, servidor HTTP ou pings.
 8. Para reiniciar, use **Restart**. Para atualizar, faça commit e push para `main`; a integração documenta deploy automático. Use **Redeploy** quando necessário. Em caso de regressão, consulte o histórico e **Rollback**; isso não reverte o arquivo de configuração persistente.

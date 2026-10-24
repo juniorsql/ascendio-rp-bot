@@ -7,6 +7,8 @@ import { onMemberAdd } from './events/welcome.js';
 import { register } from './utils/registration.js';
 import { errorCode, log } from './logs/logger.js';
 async function main(): Promise<void> {
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  if (major !== 24 || (minor ?? 0) < 17) throw new Error('NodeRuntimeMismatch: execute npm ci e npm start para usar o Node 24 incluído no projeto.');
   const env = loadEnv();
   const store = new Store(env.dataDir);
   await store.init({ welcomeChannelId: env.welcomeChannelId, logChannelId: env.logChannelId, adminRoleIds: env.adminRoleIds });
@@ -22,7 +24,7 @@ async function main(): Promise<void> {
   client.once(Events.ClientReady, async ready => {
     if (ready.user.id !== env.clientId) { log('application_id_mismatch', {}, 'error'); await shutdown(1); return; }
     ready.user.setActivity(store.snapshot().config.name, { type: ActivityType.Watching });
-    log('bot_online', { guildId: env.guildId, rssMB: Math.round(process.memoryUsage().rss / 1048576) });
+    log('bot_online', { guildId: env.guildId, rssMB: Math.round(process.memoryUsage().rss / 1048576), nodeVersion: process.version });
     if (env.register && !registered) {
       try { await register(env); registered = true; } catch (error) { log('registration_failed', { code: errorCode(error) }, 'error'); }
     }
