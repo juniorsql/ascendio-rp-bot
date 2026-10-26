@@ -4,6 +4,7 @@ import { Store } from './services/store.js';
 import { Drafts } from './services/drafts.js';
 import { onInteraction } from './commands/handler.js';
 import { onMemberAdd } from './events/welcome.js';
+import { joinRole } from './events/member-role.js';
 import { register } from './utils/registration.js';
 import { errorCode, log } from './logs/logger.js';
 import { TicketStore, ticketSeed } from './tickets/store.js';
@@ -30,6 +31,10 @@ async function main(): Promise<void> {
     if (ready.user.id !== env.clientId) { log('application_id_mismatch', {}, 'error'); await shutdown(1); return; }
     ready.user.setActivity(store.snapshot().config.name, { type: ActivityType.Watching });
     log('bot_online', { guildId: env.guildId, rssMB: Math.round(process.memoryUsage().rss / 1048576), nodeVersion: process.version });
+    if (env.joinRoleId) {
+      try { await joinRole(await client.guilds.fetch(env.guildId), env.joinRoleId); log('join_role_ready', { roleId: env.joinRoleId }); }
+      catch (error) { log('join_role_setup_failed', { roleId: env.joinRoleId, code: errorCode(error) }, 'error'); }
+    }
     if (env.register && !registered) {
       try { await register(env); registered = true; } catch (error) { log('registration_failed', { code: errorCode(error) }, 'error'); }
     }

@@ -3,8 +3,10 @@ import type { Context } from '../commands/handler.js';
 import { target } from '../services/discord.js';
 import { welcomeEmbed } from '../templates/embeds.js';
 import { errorCode, log } from '../logs/logger.js';
+import { assignJoinRole } from './member-role.js';
 export async function onMemberAdd(member: GuildMember, ctx: Context): Promise<void> {
   if (member.guild.id !== ctx.env.guildId || member.user.bot) return;
+  await assignJoinRole(member, ctx);
   const config = ctx.store.snapshot().config;
   if (!config.welcomeChannelId) return;
   try {

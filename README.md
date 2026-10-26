@@ -4,6 +4,8 @@ Bot modular de Discord para a comunidade brasileira Ascendio RP. Publicações e
 
 A partir da versão **1.2.0**, inclui central de tickets com Suporte, Doações, Solicitar RP e Reportar bug. Consulte [TICKETS.md](docs/TICKETS.md) para equipes, privacidade, arquivamento e recuperação.
 
+A versão **1.2.1** também atribui o cargo configurado em `JOIN_ROLE_ID` aos novos membros humanos, antes das boas-vindas. No Ascendios RP, é o cargo **Convidado**. O bot precisa de **Gerenciar cargos** e de um cargo acima dele na hierarquia. A atribuição preserva os demais cargos, funciona mesmo sem canal de boas-vindas e não altera membros que já estavam no servidor. Vazio desativa o recurso. Falhas na atribuição são registradas sem impedir a mensagem de recepção.
+
 **Estado da entrega:** implementação, verificações locais, publicação no GitHub, autenticação real, registro dos comandos e deploy gratuito executados. O acesso aos canais privados de boas-vindas e logs foi confirmado; o aceite final do fluxo com membros reais e publicações pela equipe permanece em aberto. O token não faz parte do repositório. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para as verificações e pendências.
 
 ## 1. Requisitos e versões

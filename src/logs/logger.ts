@@ -1,5 +1,5 @@
 // Lista de campos permitidos: nunca serializa erros REST, payloads, tokens ou conteúdo.
-export function log(event: string, meta: { guildId?: string; userId?: string; channelId?: string; messageId?: string; action?: string; code?: string | number; rssMB?: number; nodeVersion?: string } = {}, level = 'info'): void {
+export function log(event: string, meta: { guildId?: string; userId?: string; roleId?: string; channelId?: string; messageId?: string; action?: string; code?: string | number; rssMB?: number; nodeVersion?: string } = {}, level = 'info'): void {
   console.log(JSON.stringify({ time: new Date().toISOString(), level, event, ...meta }));
 }
 export function errorCode(error: unknown): string | number {
