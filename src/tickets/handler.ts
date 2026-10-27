@@ -3,6 +3,7 @@ import { form } from '../components/forms.js';
 import { UserError } from '../validation/input.js';
 import type { Context } from '../commands/handler.js';
 import { department, ticketLabels } from './store.js';
+import { ticketStaff } from './service.js';
 
 export async function ticketInteraction(i: Interaction, ctx: Context): Promise<void> {
   const tickets = ctx.tickets;
@@ -12,9 +13,26 @@ export async function ticketInteraction(i: Interaction, ctx: Context): Promise<v
   if (i.isChatInputCommand()) {
     // Configuração e painel exigem permissão administrativa, independentemente do cargo de publicador.
     const member = await tickets.member(i.user.id);
+    if (i.commandName === 'atendimentos') {
+      await i.deferReply({ flags: MessageFlags.Ephemeral });
+      const s = tickets.store.snapshot();
+      if (!Object.values(s.config.routes).some(r => ticketStaff(member, r))) throw new UserError('Acesso restrito à equipe de atendimento.');
+      const active = s.tickets.filter(t => t.status === 'open' && ticketStaff(member, t));
+      // Apenas links dos tickets acessíveis; o comando não adiciona membros aos tópicos.
+      const accessible = [];
+      for (const t of active.slice(0, 20)) {
+        try { await tickets.getAuthorized(t.id, t.channelId!, member.id, true); accessible.push(t); } catch { /* Acesso removido: não exibir. */ }
+      }
+      const lines = accessible.slice(0, 20).map(t => `${ticketLabels[t.department].emoji} <#${t.channelId}> • ${t.claimedBy ? 'em atendimento' : 'aguardando equipe'}`);
+      return void await i.editReply({ content: `**Atendimentos da sua equipe**\n${lines.join('\n') || 'Nenhum atendimento aberto disponível.'}${active.length > 20 ? '\nExibindo até 20 atendimentos. Consulte também os tópicos nas centrais de cada setor.' : ''}`, allowedMentions: { parse: [] } });
+    }
     if (!member.permissions.has(PermissionFlagsBits.ManageGuild)) throw new UserError('Você precisa da permissão Gerenciar servidor.');
     await i.deferReply({ flags: MessageFlags.Ephemeral });
     const sub = i.options.getSubcommand();
+    if (sub === 'topicos') {
+      await tickets.enableThreads(); const id = await tickets.ensurePanel();
+      return void await i.editReply(`Tópicos privados ativados. Novos atendimentos serão arquivados sem exclusão. Painel: https://discord.com/channels/${i.guildId}/${tickets.store.snapshot().config.panelChannelId}/${id}`);
+    }
     if (sub === 'painel') {
       const id = await tickets.ensurePanel();
       return void await i.editReply(`Painel pronto: https://discord.com/channels/${i.guildId}/${tickets.store.snapshot().config.panelChannelId}/${id}`);
@@ -62,7 +80,7 @@ export async function ticketInteraction(i: Interaction, ctx: Context): Promise<v
     }
     if (action === 'finish') {
       await tickets.close(key ?? '', i.channelId, i.user.id, i.fields.getTextInputValue('reason'));
-      return void await i.editReply('Atendimento encerrado. O canal foi bloqueado para novas mensagens e o histórico foi preservado.');
+      return void await i.editReply('Atendimento encerrado e arquivado. A conversa foi preservada, sem exclusão.');
     }
     throw new UserError('Formulário de ticket desconhecido.');
   }

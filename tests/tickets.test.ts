@@ -7,6 +7,7 @@ import { ChannelType, Collection, PermissionFlagsBits as P, PermissionsBitField,
 import { departments, TicketStore, ticketDefaults, ticketSeed } from '../src/tickets/store.js';
 import { Tickets, ticketOverwrites, ticketPanel, ticketStaff } from '../src/tickets/service.js';
 import { onInteraction, type Context } from '../src/commands/handler.js';
+import { hubOverwrites, hubTopic, findThread, threadName } from '../src/tickets/thread-hubs.js';
 
 const guildId = '123456789012345678', botId = '223456789012345678', ownerId = '323456789012345678', staffId = '423456789012345678', outsiderId = '523456789012345678';
 const panelId = '623456789012345678', logId = '723456789012345678', closedId = '823456789012345678', roleId = '923456789012345678';
@@ -17,18 +18,22 @@ async function fixture(t: TestContext) {
   const store = new TicketStore(dir); await store.init(config);
   let sequence = 0;
   const id = () => String(153456789012345670n + BigInt(++sequence));
-  const all = new PermissionsBitField([P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.EmbedLinks, P.AttachFiles, P.AddReactions, P.ManageChannels, P.ManageRoles]);
+  const all = new PermissionsBitField([P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.EmbedLinks, P.AttachFiles, P.AddReactions, P.ManageChannels, P.ManageRoles, P.CreatePrivateThreads, P.ManageThreads, P.SendMessagesInThreads]);
   const members = new Map<string, any>([ownerId, staffId, outsiderId, botId].map(userId => [userId, { id: userId, user: { bot: userId === botId }, permissions: userId === botId ? all : new PermissionsBitField(0n), roles: { cache: new Map(userId === staffId ? [[roleId, {}]] : []) } }]));
   const everyone = { id: guildId, name: '@everyone', managed: false };
   const roles = new Map([[guildId, everyone], [roleId, { id: roleId, name: 'Suporte', managed: false }]]);
   const channels = new Collection<string, any>();
-  const creates: any[] = [], edits: any[] = [], sends: any[] = [];
-  let unknownCreate = false, failLog = false, failBeforeCreate = false;
+  const creates: any[] = [], threadCreates: any[] = [], edits: any[] = [], sends: any[] = [];
+  let unknownCreate = false, failLog = false, failBeforeCreate = false, failInvite = false;
   function channel(channelId: string, type: ChannelType, overrides: any[] = []) {
     const messages = new Collection<string, any>();
     const ch: any = { id: channelId, guildId, type, topic: '', parentId: null, overrides,
       permissionsFor: (who: any) => {
         if (who.id === botId) return all;
+        if (type === ChannelType.PrivateThread) {
+          const p = channels.get(ch.parentId).permissionsFor(who);
+          return ch.memberIds.has(who.id) || p.has(P.ManageThreads) ? p : new PermissionsBitField(0n);
+        }
         if (ch.id === logId || type === ChannelType.GuildCategory) return new PermissionsBitField(0n);
         if (ch.id === panelId) return new PermissionsBitField(P.ViewChannel);
         let bits = 0n;
@@ -53,8 +58,32 @@ async function fixture(t: TestContext) {
         const edit = m.edit; m.edit = async (body: any) => { await edit(body); normalized(); return m; }; normalized();
         messages.set(m.id, m); return m;
       },
-      edit: async (body: any) => { if (body.permissionOverwrites) ch.overrides = body.permissionOverwrites; Object.assign(ch, { name: body.name ?? ch.name }); edits.push(body); return ch; },
+      edit: async (body: any) => {
+        if (body.permissionOverwrites) {
+          ch.overrides = body.permissionOverwrites;
+          ch.permissionOverwrites.cache = new Collection(body.permissionOverwrites.map((o: any) => [o.id, { id: o.id, type: o.type, allow: new PermissionsBitField(o.allow), deny: new PermissionsBitField(o.deny) }]));
+        }
+        Object.assign(ch, { name: body.name ?? ch.name });
+        if (body.parent) ch.parentId = body.parent;
+        for (const key of ['archived', 'locked', 'invitable']) if (body[key] !== undefined) ch[key] = body[key];
+        edits.push(body); return ch;
+      },
       setParent: async (parent: string, options: any) => { assert.equal(options.lockPermissions, false); ch.parentId = parent; return ch; },
+      permissionOverwrites: { cache: new Collection(overrides.map((o: any) => [o.id, { id: o.id, type: o.type, allow: new PermissionsBitField(o.allow), deny: new PermissionsBitField(o.deny) }])) },
+      memberIds: new Set([botId]),
+      members: { add: async (user: string) => { if (failInvite) throw new Error('Member add temporarily failed'); ch.memberIds.add(user); }, fetch: async (user: string) => { if (!ch.memberIds.has(user)) throw new Error('Not a member'); return { id: user }; } },
+      setArchived: async (value: boolean) => { ch.archived = value; return ch; },
+      setLocked: async (value: boolean) => { ch.locked = value; return ch; },
+      setInvitable: async (value: boolean) => { ch.invitable = value; return ch; },
+      threads: {
+        create: async (body: any) => {
+          threadCreates.push(body); if (failBeforeCreate) throw new Error('Thread create timeout');
+          const thread = channel(id(), ChannelType.PrivateThread); Object.assign(thread, { name: body.name, parentId: ch.id, ownerId: botId, archived: false, locked: false, invitable: body.invitable, archiveTimestamp: Date.now() });
+          if (unknownCreate) { unknownCreate = false; throw new Error('Timeout after thread creation'); } return thread;
+        },
+        fetchActive: async () => ({ threads: channels.filter(c => c.type === ChannelType.PrivateThread && c.parentId === ch.id && !c.archived) }),
+        fetchArchived: async () => ({ threads: channels.filter(c => c.type === ChannelType.PrivateThread && c.parentId === ch.id && c.archived), hasMore: false }),
+      },
     };
     channels.set(channelId, ch); return ch;
   }
@@ -67,7 +96,7 @@ async function fixture(t: TestContext) {
   } } };
   const client = { user: { id: botId }, guilds: { fetch: async () => guild }, channels: { fetch: async (id: string) => { if (!channels.has(id)) throw Object.assign(new Error('Unknown channel'), { code: 10003 }); return channels.get(id); } } } as unknown as Client;
   const tickets = new Tickets(client, guildId, store);
-  return { dir, config, store, tickets, client, guild, members, channels, creates, sends, edits, setUnknownCreate: () => { unknownCreate = true; }, setFailBeforeCreate: () => { failBeforeCreate = true; }, setFailLog: (value: boolean) => { failLog = value; } };
+  return { dir, config, store, tickets, client, guild, members, channels, creates, threadCreates, sends, edits, setFailInvite: (value: boolean) => { failInvite = value; }, setUnknownCreate: () => { unknownCreate = true; }, setFailBeforeCreate: () => { failBeforeCreate = true; }, setFailLog: (value: boolean) => { failLog = value; } };
 }
 
 test('painel tem os quatro assuntos e publicação repetida atualiza a mesma mensagem', async t => {
@@ -172,4 +201,92 @@ test('fluxo de membro passa pelo roteador, exige painel atual e mantém resposta
   i.customId = replies[0].custom_id; mode = 'modal'; await onInteraction(i as Interaction, ctx);
   assert.equal(replies[1].flags, 64); assert.match(replies[2], /Seu atendimento está em/); assert.equal(f.creates.length, 1);
   mode = 'select'; i.customId = 'ticket:select'; i.message.id = '133456789012345678'; await onInteraction(i as Interaction, ctx); assert.match(replies.at(-1).content, /não está mais ativo/);
+});
+
+test('ativação cria só quatro centrais reutilizáveis e mantém o painel existente', async t => {
+  const f = await fixture(t); const panel = await f.tickets.ensurePanel();
+  await f.tickets.enableThreads(); await f.tickets.enableThreads();
+  assert.equal(f.creates.length, 4); assert.equal(f.store.snapshot().config.mode, 'thread');
+  assert.equal(await f.tickets.ensurePanel(), panel);
+  for (const d of departments) assert.equal(f.channels.get(f.store.snapshot().config.routes[d].parentChannelId!)!.topic, hubTopic(d));
+});
+test('tópicos privados preservam isolamento e fecham arquivados sem excluir ou mover canais', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  const opened = await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Minha dúvida.');
+  const thread = f.channels.get(opened.channelId!)!;
+  assert.equal(thread.type, ChannelType.PrivateThread); assert.equal(thread.invitable, false); assert.equal(thread.memberIds.has(ownerId), true);
+  assert.equal(thread.permissionsFor(f.members.get(ownerId)).has(P.ViewChannel), true);
+  assert.equal(thread.permissionsFor(f.members.get(outsiderId)).has(P.ViewChannel), false);
+  assert.equal(thread.permissionsFor(f.members.get(staffId)).has(P.ManageThreads), true);
+  const parentId = thread.parentId;
+  await f.tickets.claim(opened.id, thread.id, staffId); assert.equal(thread.memberIds.has(staffId), false);
+  await f.tickets.close(opened.id, thread.id, ownerId, 'Resolvido.');
+  assert.equal(thread.archived, true); assert.equal(thread.locked, true); assert.equal(thread.parentId, parentId);
+  assert.equal(f.channels.has(thread.id), true); assert.equal(f.creates.length, 4); assert.equal(f.threadCreates.length, 1);
+  assert.equal(f.store.snapshot().tickets[0]!.status, 'closed');
+});
+test('cargo de outro departamento e permissão global de tópicos não abrem tickets alheios', async t => {
+  const f = await fixture(t); const foreign = '143456789012345678';
+  f.members.get(outsiderId)!.permissions = new PermissionsBitField(P.ManageThreads);
+  f.members.get(outsiderId)!.roles.cache.set(foreign, {});
+  await f.tickets.enableThreads(); const opened = await f.tickets.open(ownerId, 'doacoes', 'Informações', 'Descrição.');
+  const thread = f.channels.get(opened.channelId!)!;
+  assert.equal(thread.permissionsFor(f.members.get(outsiderId)).has(P.ViewChannel), false);
+  await assert.rejects(f.tickets.claim(opened.id, thread.id, outsiderId), /restrita/);
+  const acl = hubOverwrites(guildId, botId, [roleId]);
+  assert.ok(new PermissionsBitField(acl[0]!.deny).has(P.ManageThreads));
+  assert.ok(new PermissionsBitField(acl[0]!.deny).has([P.CreatePrivateThreads, P.CreatePublicThreads]));
+});
+test('permissões adulteradas na central bloqueiam novas aberturas até correção', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  const hub = f.channels.get(f.store.snapshot().config.routes.suporte.parentChannelId!)!;
+  hub.permissionOverwrites.cache.set(outsiderId, { id: outsiderId, type: 1, allow: new PermissionsBitField(P.ManageThreads), deny: new PermissionsBitField(0n) });
+  await assert.rejects(f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.'), /permissões da central/);
+  assert.equal(f.threadCreates.length, 0);
+  await f.tickets.enableThreads(); assert.equal((await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.')).kind, 'thread');
+});
+test('falha ao convidar mantém reserva; reinício retoma o mesmo tópico', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads(); f.setFailInvite(true);
+  await assert.rejects(f.tickets.open(ownerId, 'rp', 'Proposta', 'Descrição.'));
+  const pending = f.store.snapshot().tickets[0]!; assert.equal(pending.status, 'creating'); assert.ok(pending.channelId);
+  const reopened = new TicketStore(f.dir); await reopened.init(); f.setFailInvite(false);
+  const recovered = await new Tickets(f.client, guildId, reopened).open(ownerId, 'rp', 'Proposta', 'Descrição.');
+  assert.equal(recovered.channelId, pending.channelId); assert.equal(f.threadCreates.length, 1);
+});
+test('criação incerta reencontra tópico privado arquivado sem duplicá-lo', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads(); f.setUnknownCreate();
+  await assert.rejects(f.tickets.open(ownerId, 'bug', 'Erro', 'Descrição.'));
+  const pending = f.store.snapshot().tickets[0]!;
+  const thread = f.channels.find(c => c.type === ChannelType.PrivateThread)!; thread.archived = true;
+  const parent = f.channels.get(pending.parentChannelId!)!;
+  assert.equal((await findThread(parent, pending))!.id, thread.id); assert.equal(thread.name, threadName(pending));
+  const reopened = new TicketStore(f.dir); await reopened.init();
+  await new Tickets(f.client, guildId, reopened).recover();
+  assert.equal(reopened.snapshot().tickets[0]!.status, 'open'); assert.equal(thread.archived, false); assert.equal(f.threadCreates.length, 1);
+});
+test('falha no registro deixa tópico bloqueado; recuperação conclui sem apagar histórico', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  const opened = await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.'); f.setFailLog(true);
+  await assert.rejects(f.tickets.close(opened.id, opened.channelId!, ownerId, 'Fim'));
+  const thread = f.channels.get(opened.channelId!)!; assert.equal(thread.archived, true); assert.equal(thread.locked, true);
+  assert.equal(f.store.snapshot().tickets[0]!.status, 'closing');
+  f.setFailLog(false); await f.tickets.recover(); assert.equal(f.store.snapshot().tickets[0]!.status, 'closed');
+  assert.equal(thread.archived, true); assert.equal(thread.locked, true); assert.equal(f.sends.filter(m => m.channelId === logId).length, 1);
+});
+test('tickets antigos continuam encerrando como canais após ativar tópicos', async t => {
+  const f = await fixture(t); const old = await f.tickets.open(ownerId, 'suporte', 'Antigo', 'Descrição.');
+  await f.tickets.enableThreads(); await f.tickets.close(old.id, old.channelId!, ownerId, 'Fim');
+  assert.equal(f.channels.get(old.channelId!)!.type, ChannelType.GuildText); assert.equal(f.channels.get(old.channelId!)!.parentId, closedId);
+  assert.equal(f.store.snapshot().tickets[0]!.status, 'closed');
+});
+test('/atendimentos exibe links em resposta privada só para equipe autorizada', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  const ticket = await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.');
+  const replies: any[] = [];
+  const i: any = { guildId, guild: f.guild, channelId: panelId, user: { id: staffId }, commandName: 'atendimentos',
+    isChatInputCommand: () => true, isButton: () => false, isModalSubmit: () => false, isStringSelectMenu: () => false, isRepliable: () => true,
+    deferReply: async (body: any) => { i.deferred = true; replies.push(body); }, editReply: async (body: any) => { replies.push(body); }, followUp: async (body: any) => { replies.push(body); } };
+  const ctx = { tickets: f.tickets, env: { guildId } } as Context;
+  await onInteraction(i, ctx); assert.equal(replies[0].flags, 64); assert.ok(replies[1].content.includes(`<#${ticket.channelId}>`));
+  i.user.id = outsiderId; await onInteraction(i, ctx); assert.match(replies.at(-1).content, /restrito à equipe/);
 });

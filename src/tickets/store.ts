@@ -11,8 +11,9 @@ export const ticketLabels: Record<Department, { label: string; emoji: string; de
   bug: { label: 'Reportar bug', emoji: '⚠️', description: 'Problemas técnicos e erros encontrados' },
 };
 export interface TicketConfig {
+  mode?: 'channel' | 'thread';
   panelChannelId: string; logChannelId: string; closedCategoryId: string;
-  routes: Record<Department, { categoryId: string; roleIds: string[] }>;
+  routes: Record<Department, { categoryId: string; roleIds: string[]; parentChannelId?: string }>;
 }
 export interface Ticket {
   id: string; ownerId: string; department: Department; categoryId: string; roleIds: string[];
@@ -20,6 +21,7 @@ export interface Ticket {
   status: 'creating' | 'open' | 'closing' | 'closed'; channelId?: string; messageId?: string;
   claimedBy?: string; closedBy?: string; closedAt?: number; reason?: string; logMessageId?: string;
   creationAttempted?: boolean;
+  kind?: 'thread'; parentChannelId?: string;
 }
 export interface TicketState { version: 1; config: TicketConfig; panelMessageId?: string; tickets: Ticket[] }
 export function ticketDefaults(): TicketConfig {
@@ -31,11 +33,13 @@ export function department(value: string): Department {
   return value as Department;
 }
 export function validateTicketConfig(c: TicketConfig): void {
+  if (c.mode !== undefined && !['channel', 'thread'].includes(c.mode)) throw new UserError('Modo de tickets inválido.');
   for (const id of [c.panelChannelId, c.logChannelId, c.closedCategoryId]) if (id) snowflake(id);
   for (const d of departments) {
     const route = c.routes[d];
     if (!route || !Array.isArray(route.roleIds) || route.roleIds.length > 10) throw new UserError('Configuração de atendimento inválida.');
     if (route.categoryId) snowflake(route.categoryId);
+    if (route.parentChannelId) snowflake(route.parentChannelId);
     for (const id of route.roleIds) snowflake(id);
   }
 }
@@ -56,6 +60,9 @@ function validateState(s: TicketState): void {
     if (!Array.isArray(t.roleIds) || t.roleIds.length > 10) throw new Error('Cargos inválidos.');
     for (const id of t.roleIds) snowflake(id);
     for (const id of [t.channelId, t.messageId, t.claimedBy, t.closedBy, t.logMessageId]) if (id) snowflake(id);
+    if (t.kind !== undefined && t.kind !== 'thread') throw new Error('Formato de ticket inválido.');
+    if (t.parentChannelId) snowflake(t.parentChannelId);
+    if (t.kind === 'thread' && !t.parentChannelId) throw new Error('Central do tópico ausente.');
     text(t.subject, 100); text(t.description, 1800);
     if (!Number.isFinite(t.createdAt) || !['creating', 'open', 'closing', 'closed'].includes(t.status)) throw new Error('Ticket inválido.');
     if (t.status !== 'creating' && !t.channelId) throw new Error('Canal do ticket ausente.');

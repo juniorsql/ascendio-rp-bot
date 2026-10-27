@@ -8,7 +8,7 @@ Data: **23/10/2026**, horário de referência America/Sao_Paulo.
 | --- | --- |
 | Instalação das dependências pelo npm | Concluída; lockfile criado |
 | TypeScript estrito, incluindo fontes e testes | Passou |
-| Testes automatizados, incluindo notificação opcional, tickets e cargo de entrada | **54 passaram, 0 falharam** |
+| Testes automatizados, incluindo publicações, cargo de entrada, canais e tópicos privados | **63 passaram, 0 falharam** |
 | Compilação para `dist/` | Passou |
 | Testes executados diretamente com Node 24.22.1 | 28 passaram |
 | Criação e destruição de cliente Discord sem login, heap V8 de 128 MB | Passou; RSS observado de aproximadamente **76 MB** |
@@ -73,3 +73,9 @@ Use [ACEITE.md](ACEITE.md) para concluir e registrar a homologação operacional
 - 13 testes adicionais: painel idempotente, privacidade e isolamento, usuário comum, concorrência, duplicidade entre assuntos, falta de disco, criação com resultado incerto, recuperação após reinício, permissões atuais de equipe, fechamento somente leitura, logs indisponíveis, categoria cheia e estado corrompido.
 - Teste real pela API do Discord usando um canal temporário privado: abertura, bloqueio de @everyone, recuperação com outro objeto de armazenamento, retorno do mesmo ticket para outro assunto, assumir atendimento, fechamento somente leitura, mudança de categoria e registro privado passaram. Canal e mensagem de registro temporários foram removidos ao concluir.
 - O teste real invocou os serviços internos autenticados. O formulário e roteamento de interações são cobertos por testes simulados; o clique no painel pela conta humana ainda precisa do aceite do responsável.
+
+## Tópicos privados — 27/10/2026
+
+- Testes de migração idempotente, reutilização de quatro centrais, isolamento entre equipes, bloqueio por sobrescritas adulteradas, abertura interrompida antes do convite, resultado REST incerto com tópico arquivado, retomada do fechamento e compatibilidade com tickets antigos. `/atendimentos` testa resposta privada e bloqueio de usuário comum.
+- Teste real autenticado: quatro centrais fixas criadas, tópico privado com `invitable=false`, solicitante adicionado, persistência após reabrir armazenamento, prevenção de duplicidade, assumir, encerrar, `archived=true`, `locked=true` e mensagem original acessível. Todos os canais anteriores permaneceram presentes; **zero exclusões**. O tópico de teste foi preservado arquivado.
+- O teste real usa serviços internos e uma conta administrativa como solicitante. A privacidade dos membros comuns é coberta pelos testes de permissões e por inspeção das sobrescritas reais; a experiência com uma conta humana comum ainda requer aceite no Discord.

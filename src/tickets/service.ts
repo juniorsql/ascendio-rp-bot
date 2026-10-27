@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits as P, StringSelectMenuBuilder, type Client, type Guild, type GuildMember, type OverwriteResolvable, type TextChannel } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits as P, StringSelectMenuBuilder, type Client, type Guild, type GuildMember, type OverwriteResolvable, type TextChannel, type ThreadChannel } from 'discord.js';
 import { errorCode, log } from '../logs/logger.js';
 import { safeText, text, UserError } from '../validation/input.js';
 import { departments, ticketLabels, TicketStore, type Department, type Ticket } from './store.js';
+import { assertHub, ensureHubs, findThread, threadName } from './thread-hubs.js';
 
 const none = { parse: [] as never[], repliedUser: false };
 const read = [P.ViewChannel, P.ReadMessageHistory];
@@ -29,9 +30,9 @@ export function ticketControls(t: Ticket) {
     new ButtonBuilder().setCustomId(`ticket:close:${t.id}`).setLabel(closed ? 'Atendimento encerrado' : 'Encerrar ticket').setStyle(ButtonStyle.Secondary).setDisabled(closed),
   )];
 }
-export function ticketPanel() {
+export function ticketPanel(threads = false) {
   return {
-    embeds: [{ color: 0xb49a61, title: 'CENTRAL DE ATENDIMENTO', description: 'Precisa falar com a equipe do Ascendio RP?\n\nSelecione o assunto abaixo e descreva o que você precisa. Um canal privado será aberto para você e a equipe responsável.\n\n**Um atendimento por pessoa de cada vez.**' }],
+    embeds: [{ color: 0xb49a61, title: 'CENTRAL DE ATENDIMENTO', description: `Precisa falar com a equipe do Ascendio RP?\n\nSelecione o assunto abaixo e descreva o que você precisa. Um ${threads ? 'tópico' : 'canal'} privado será aberto para você e a equipe responsável.\n\n**Um atendimento por pessoa de cada vez.**${threads ? '\nAo encerrar, a conversa será arquivada, sem exclusão.' : ''}` }],
     components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId('ticket:select').setPlaceholder('Selecione o assunto do atendimento').addOptions(...departments.map(d => ({ label: ticketLabels[d].label, value: d, emoji: ticketLabels[d].emoji, description: ticketLabels[d].description }))))],
     allowedMentions: none,
   };
@@ -53,9 +54,14 @@ export class Tickets {
     this.locks.add(key); try { return await fn(); } finally { this.locks.delete(key); }
   }
   private async guild(): Promise<Guild> { return this.client.guilds.fetch(this.guildId); }
-  private async channel(id: string): Promise<TextChannel> {
+  private async channel(id: string): Promise<TextChannel | ThreadChannel> {
     const ch = await this.client.channels.fetch(id, { force: true });
-    if (!ch || ch.type !== ChannelType.GuildText || ch.guildId !== this.guildId) throw new UserError('Canal de atendimento indisponível. Confira a configuração.');
+    if (!ch || (ch.type !== ChannelType.GuildText && ch.type !== ChannelType.PrivateThread) || ch.guildId !== this.guildId) throw new UserError('Canal de atendimento indisponível. Confira a configuração.');
+    return ch;
+  }
+  private async textChannel(id: string): Promise<TextChannel> {
+    const ch = await this.channel(id);
+    if (ch.type !== ChannelType.GuildText) throw new UserError('Selecione um canal de texto para a central ou os registros.');
     return ch;
   }
   async member(userId: string): Promise<GuildMember> {
@@ -63,16 +69,16 @@ export class Tickets {
     if (member.user.bot) throw new UserError('Bots não podem abrir ou assumir atendimentos.');
     return member;
   }
-  async checkConfig(c = this.store.snapshot().config): Promise<void> {
+  async checkConfig(c = this.store.snapshot().config, checkHubs = true): Promise<void> {
     const guild = await this.guild();
     const me = await guild.members.fetchMe({ force: true });
     if (!me.permissions.has([P.ManageChannels, P.ManageRoles])) throw new UserError('O bot precisa de Gerenciar canais e Gerenciar permissões para os tickets.');
-    const panel = await this.channel(c.panelChannelId), logs = await this.channel(c.logChannelId);
+    const panel = await this.textChannel(c.panelChannelId), logs = await this.textChannel(c.logChannelId);
     if (panel.id === logs.id) throw new UserError('Use um canal privado separado para os registros.');
     for (const ch of [panel, logs]) if (!ch.permissionsFor(me)?.has([...write, P.ManageChannels, P.ManageRoles])) throw new UserError('O bot não possui as permissões necessárias no painel ou nos registros.');
     // Logs de tickets nunca são publicados em canal aberto ao cargo @everyone.
     if (logs.permissionsFor(guild.roles.everyone)?.has(P.ViewChannel)) throw new UserError('O canal de registros precisa ser privado.');
-    const categories = [c.closedCategoryId, ...departments.map(d => c.routes[d].categoryId)];
+    const categories = [...(c.mode === 'thread' ? [] : [c.closedCategoryId]), ...departments.map(d => c.routes[d].categoryId)];
     for (const id of categories) {
       const ch = await guild.channels.fetch(id, { force: true });
       if (!ch || ch.type !== ChannelType.GuildCategory || !ch.permissionsFor(me)?.has([P.ViewChannel, P.ManageChannels, P.ManageRoles])) throw new UserError('Categoria de tickets indisponível ou sem permissão para o bot.');
@@ -83,22 +89,36 @@ export class Tickets {
         const role = await guild.roles.fetch(id);
         if (!role || role.id === guild.id || role.managed) throw new UserError('Escolha cargos próprios da equipe, sem @everyone ou integrações.');
       }
+      if (c.mode === 'thread' && checkHubs) {
+        const hub = await this.textChannel(c.routes[d].parentChannelId ?? '');
+        assertHub(hub, guild.id, this.client.user!.id, d, c.routes[d]);
+        if (!hub.permissionsFor(me)?.has([P.ViewChannel, P.ReadMessageHistory, P.CreatePrivateThreads, P.ManageThreads, P.SendMessagesInThreads])) throw new UserError('O bot precisa criar, gerenciar e enviar mensagens em tópicos privados na central.');
+      }
     }
+  }
+  async enableThreads(): Promise<void> {
+    return this.exclusive('setup', async () => {
+      const config = this.store.snapshot().config;
+      await this.checkConfig({ ...config, mode: 'thread' }, false);
+      const hubs = await ensureHubs(await this.guild(), config, this.client.user!.id);
+      await this.store.transact(s => { for (const d of departments) s.config.routes[d].parentChannelId = hubs[d]; s.config.mode = 'thread'; });
+      await this.checkConfig();
+    });
   }
   async ensurePanel(): Promise<string> {
     return this.exclusive('panel', async () => {
       const state = this.store.snapshot();
       await this.checkConfig();
-      const ch = await this.channel(state.config.panelChannelId);
+      const ch = await this.textChannel(state.config.panelChannelId);
       const previous = state.panelMessageId ? await ch.messages.fetch(state.panelMessageId).catch(e => { if (e.code !== 10008) throw e; return null; }) : null;
       if (previous) {
         if (previous.author.id !== this.client.user!.id) throw new UserError('O painel salvo não pertence a este bot.');
-        await previous.edit(ticketPanel()); return previous.id;
+        await previous.edit(ticketPanel(state.config.mode === 'thread')); return previous.id;
       }
       // Recupera um envio cuja confirmação local tenha sido interrompida.
       const recent = await ch.messages.fetch({ limit: 50 });
       const found = recent.find(m => m.author.id === this.client.user!.id && m.components.some(row => 'components' in row && row.components.some(c => 'customId' in c && c.customId === 'ticket:select')));
-      const sent = found ?? await ch.send({ ...ticketPanel(), nonce: `tp${this.guildId}`, enforceNonce: true });
+      const sent = found ?? await ch.send({ ...ticketPanel(state.config.mode === 'thread'), nonce: `tp${this.guildId}`, enforceNonce: true });
       await this.store.transact(s => { s.panelMessageId = sent.id; });
       return sent.id;
     });
@@ -128,20 +148,25 @@ export class Tickets {
         if (state.tickets.some(t => t.ownerId === ownerId && Date.now() - t.createdAt < 60_000)) throw new UserError('Aguarde um minuto antes de abrir outro ticket.');
         if (state.tickets.filter(t => t.status !== 'closed').length >= 200) throw new UserError('A central atingiu o limite de atendimentos. Procure a administração.');
         const route = state.config.routes[d];
-        t = { id: randomUUID().replaceAll('-', '').slice(0, 20), ownerId, department: d, subject, description, categoryId: route.categoryId, roleIds: [...route.roleIds], createdAt: Date.now(), status: 'creating' };
+        t = { id: randomUUID().replaceAll('-', '').slice(0, 20), ownerId, department: d, subject, description, categoryId: route.categoryId, roleIds: [...route.roleIds], createdAt: Date.now(), status: 'creating', ...(state.config.mode === 'thread' ? { kind: 'thread' as const, parentChannelId: route.parentChannelId } : {}) };
         const reservation = t;
         await this.store.transact(s => { if (s.tickets.some(t => t.ownerId === ownerId && t.status !== 'closed')) throw new UserError('Você já tem um ticket em andamento.'); s.tickets.push(reservation); });
       }
       // A reserva sobrevive a erros REST e reinícios: o tópico é a chave de reconciliação.
       const guild = await this.guild();
       const channels = await guild.channels.fetch();
-      let ch = t.channelId ? await this.channel(t.channelId) : channels.find(c => c?.type === ChannelType.GuildText && c.topic === topic(t!)) as TextChannel | undefined;
+      let ch: TextChannel | ThreadChannel | undefined = t.channelId ? await this.channel(t.channelId) : t.kind === 'thread'
+        ? t.creationAttempted ? await findThread(await this.textChannel(t.parentChannelId!), t) : undefined
+        : channels.find(c => c?.type === ChannelType.GuildText && c.topic === topic(t!)) as TextChannel | undefined;
       if (!ch) {
         if (t.creationAttempted) throw new UserError('A abertura anterior ficou sem confirmação. A equipe precisa conferir o registro pendente antes de liberar uma nova tentativa.');
         await this.store.transact(s => { s.tickets.find(r => r.id === t!.id)!.creationAttempted = true; });
         t.creationAttempted = true;
         try {
-          ch = await guild.channels.create({ name: `${t.department}-${t.id.slice(0, 6)}`, type: ChannelType.GuildText, parent: t.categoryId, topic: topic(t), permissionOverwrites: ticketOverwrites(guild.id, this.client.user!.id, ownerId, t.roleIds), reason: 'Abertura de atendimento pelo Ascendio RP' });
+          if (t.kind === 'thread') {
+            const parent = await this.textChannel(t.parentChannelId!);
+            ch = await parent.threads.create({ name: threadName(t), type: ChannelType.PrivateThread, invitable: false, autoArchiveDuration: 1440, reason: 'Atendimento privado do Ascendio RP' });
+          } else ch = await guild.channels.create({ name: `${t.department}-${t.id.slice(0, 6)}`, type: ChannelType.GuildText, parent: t.categoryId, topic: topic(t), permissionOverwrites: ticketOverwrites(guild.id, this.client.user!.id, ownerId, t.roleIds), reason: 'Abertura de atendimento pelo Ascendio RP' });
         } catch (e) {
           const status = (e as { status?: number }).status;
           if (status && status >= 400 && status < 500 && status !== 429) await this.store.transact(s => { s.tickets.find(r => r.id === t!.id)!.creationAttempted = false; });
@@ -150,6 +175,12 @@ export class Tickets {
       }
       const channel = ch;
       await this.store.transact(s => { s.tickets.find(r => r.id === t!.id)!.channelId = channel.id; });
+      if (ch.type === ChannelType.PrivateThread) {
+        if (t.kind !== 'thread' || ch.parentId !== t.parentChannelId || ch.ownerId !== this.client.user!.id) throw new UserError('Tópico de atendimento não corresponde ao registro.');
+        if (ch.archived) await ch.setArchived(false, 'Recuperar abertura interrompida');
+        await ch.setInvitable(false, 'Privacidade do atendimento');
+        await ch.members.add(ownerId);
+      }
       if (!t.messageId) {
         const recent = await ch.messages.fetch({ limit: 20 });
         const old = recent.find(m => m.author.id === this.client.user!.id && m.components.some(row => 'components' in row && row.components.some(c => 'customId' in c && c.customId === `ticket:close:${t!.id}`)));
@@ -162,11 +193,15 @@ export class Tickets {
       return t;
     });
   }
-  async getAuthorized(id: string, channelId: string, actorId: string, staffOnly = false): Promise<{ ticket: Ticket; channel: TextChannel; member: GuildMember }> {
+  async getAuthorized(id: string, channelId: string, actorId: string, staffOnly = false): Promise<{ ticket: Ticket; channel: TextChannel | ThreadChannel; member: GuildMember }> {
     const ticket = this.store.snapshot().tickets.find(t => t.id === id);
     if (!ticket || ticket.channelId !== channelId || ticket.status === 'creating') throw new UserError('Ticket não encontrado neste canal.');
     const channel = await this.channel(channelId), member = await this.member(actorId);
     if (!channel.permissionsFor(member)?.has(P.ViewChannel) || (!ticketStaff(member, ticket) && (staffOnly || ticket.ownerId !== actorId))) throw new UserError('Ação restrita ao solicitante e à equipe responsável pelo ticket.');
+    if (ticket.kind === 'thread') {
+      if (channel.type !== ChannelType.PrivateThread || channel.parentId !== ticket.parentChannelId) throw new UserError('Tópico de atendimento inválido.');
+      if (!ticketStaff(member, ticket)) await channel.members.fetch(actorId);
+    } else if (channel.type !== ChannelType.GuildText) throw new UserError('Canal do atendimento inválido.');
     return { ticket, channel, member };
   }
   async claim(id: string, channelId: string, actorId: string): Promise<void> {
@@ -174,6 +209,10 @@ export class Tickets {
       const { ticket, channel } = await this.getAuthorized(id, channelId, actorId, true);
       if (ticket.status !== 'open') throw new UserError('Esse ticket já está sendo encerrado ou foi encerrado.');
       if (ticket.claimedBy && ticket.claimedBy !== actorId) throw new UserError('Outro integrante da equipe já assumiu esse atendimento.');
+      if (channel.type === ChannelType.PrivateThread) {
+        if (channel.archived) await channel.setArchived(false, 'Retomar atendimento ativo');
+        // A equipe acessa por Gerenciar tópicos no setor, sem convite permanente adicional.
+      }
       await this.store.transact(s => { s.tickets.find(t => t.id === id)!.claimedBy = actorId; });
       ticket.claimedBy = actorId;
       if (ticket.messageId) await (await channel.messages.fetch(ticket.messageId)).edit(introduction(ticket));
@@ -193,20 +232,30 @@ export class Tickets {
     let ticket = this.store.snapshot().tickets.find(t => t.id === id)!;
     const c = this.store.snapshot().config;
     const channel = await this.channel(ticket.channelId!);
-    // Não sincronizar permissões com a categoria: preserva a separação entre departamentos.
-    await channel.edit({ name: `fechado-${ticket.department}-${ticket.id.slice(0, 6)}`, permissionOverwrites: ticketOverwrites(this.guildId, this.client.user!.id, ticket.ownerId, ticket.roleIds, true), reason: 'Encerramento de ticket com histórico preservado' });
-    const parent = await (await this.guild()).channels.fetch(c.closedCategoryId, { force: true });
-    if (!parent || parent.type !== ChannelType.GuildCategory) throw new UserError('Categoria de arquivamento indisponível. O canal já foi bloqueado e o histórico foi preservado.');
-    const allChannels = await (await this.guild()).channels.fetch();
-    // Categorias do Discord comportam 50 canais. Se lotar, fica fechado na categoria atual.
-    if (channel.parentId !== parent.id && allChannels.filter(ch => ch?.parentId === parent.id).size < 50) await channel.setParent(parent.id, { lockPermissions: false, reason: 'Arquivar atendimento encerrado' });
+    const isThread = ticket.kind === 'thread';
+    if (isThread) {
+      if (channel.type !== ChannelType.PrivateThread || channel.parentId !== ticket.parentChannelId) throw new UserError('Tópico de atendimento inválido.');
+      if (channel.archived) await channel.setArchived(false, 'Concluir encerramento pendente');
+      await channel.setLocked(true, 'Encerrar atendimento sem excluir a conversa');
+    } else {
+      if (channel.type !== ChannelType.GuildText) throw new UserError('Canal de atendimento inválido.');
+      // Compatibilidade: canais antigos mantêm seu histórico e permissões.
+      await channel.edit({ name: `fechado-${ticket.department}-${ticket.id.slice(0, 6)}`, permissionOverwrites: ticketOverwrites(this.guildId, this.client.user!.id, ticket.ownerId, ticket.roleIds, true), reason: 'Encerramento de ticket com histórico preservado' });
+      const parent = await (await this.guild()).channels.fetch(c.closedCategoryId, { force: true });
+      if (!parent || parent.type !== ChannelType.GuildCategory) throw new UserError('Categoria de arquivamento indisponível. O canal já foi bloqueado e o histórico foi preservado.');
+      const allChannels = await (await this.guild()).channels.fetch();
+      // Categorias do Discord comportam 50 canais. Se lotar, fica fechado na categoria atual.
+      if (channel.parentId !== parent.id && allChannels.filter(ch => ch?.parentId === parent.id).size < 50) await channel.setParent(parent.id, { lockPermissions: false, reason: 'Arquivar atendimento encerrado' });
+    }
     ticket = { ...ticket, status: 'closed' };
     if (ticket.messageId) {
       try { await (await channel.messages.fetch(ticket.messageId)).edit(introduction(ticket)); }
       catch (e) { if ((e as { code?: number }).code !== 10008) throw e; }
     }
+    // Arquivar depois de editar a mensagem evita a reabertura implícita causada pelo envio.
+    if (channel.type === ChannelType.PrivateThread) await channel.edit({ archived: true, locked: true, invitable: false, reason: 'Conversa preservada em tópico privado arquivado' });
     if (!ticket.logMessageId) {
-      const logs = await this.channel(c.logChannelId);
+      const logs = await this.textChannel(c.logChannelId);
       const guild = await this.guild();
       if (logs.permissionsFor(guild.roles.everyone)?.has(P.ViewChannel)) throw new UserError('O registro não foi enviado: o canal de logs deixou de ser privado. O histórico continua no ticket.');
       const recent = await logs.messages.fetch({ limit: 50 });
@@ -223,7 +272,9 @@ export class Tickets {
     if (creating.length) {
       const channels = await (await this.guild()).channels.fetch();
       for (const t of creating) {
-        if (!channels.some(ch => ch?.type === ChannelType.GuildText && ch.topic === topic(t))) continue;
+        if (t.kind === 'thread') {
+          if (!await findThread(await this.textChannel(t.parentChannelId!), t)) continue;
+        } else if (!channels.some(ch => ch?.type === ChannelType.GuildText && ch.topic === topic(t))) continue;
         try { await this.open(t.ownerId, t.department, t.subject, t.description); }
         catch (e) { log('ticket_recovery_pending', { channelId: t.channelId, code: errorCode(e) }, 'warn'); }
       }

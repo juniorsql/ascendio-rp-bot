@@ -120,7 +120,7 @@ async function configModal(i: ModalSubmitInteraction, ctx: Context) {
 }
 async function handle(i: Interaction, ctx: Context) {
   if (!i.isChatInputCommand() && !i.isModalSubmit() && !i.isButton() && !i.isStringSelectMenu()) return;
-  if ((i.isChatInputCommand() && i.commandName === 'ticket') || ('customId' in i && i.customId.startsWith('ticket:'))) return ticketInteraction(i, ctx);
+  if ((i.isChatInputCommand() && ['ticket', 'atendimentos'].includes(i.commandName)) || ('customId' in i && i.customId.startsWith('ticket:'))) return ticketInteraction(i, ctx);
   if (i.isChatInputCommand() && i.commandName === 'ajuda') {
     if (i.guildId !== ctx.env.guildId) throw new UserError('Este bot está restrito ao servidor configurado.');
     return i.reply({ content: '**Ascendio RP • Orientações**\nConsulte os canais de regras e ambientação antes de iniciar sua história.\n\n**Equipe:** use /anuncio, /evento, /spoiler ou /comunicado para compor uma publicação. Revise a prévia privada e confirme. /regras reúne o regulamento. /configurar edita os canais, cargos, identidade e templates.\n\nPublicações exigem Gerenciar mensagens ou um cargo autorizado. Configurações exigem Gerenciar servidor.', flags: MessageFlags.Ephemeral });

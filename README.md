@@ -6,6 +6,8 @@ A partir da versão **1.2.0**, inclui central de tickets com Suporte, Doações,
 
 A versão **1.2.1** também atribui o cargo configurado em `JOIN_ROLE_ID` aos novos membros humanos, antes das boas-vindas. No Ascendios RP, é o cargo **Convidado**. O bot precisa de **Gerenciar cargos** e de um cargo acima dele na hierarquia. A atribuição preserva os demais cargos, funciona mesmo sem canal de boas-vindas e não altera membros que já estavam no servidor. Vazio desativa o recurso. Falhas na atribuição são registradas sem impedir a mensagem de recepção.
 
+Na versão **1.3.0**, novos tickets podem usar **tópicos privados**, encerrados por arquivamento e bloqueio, sem exclusão. São quatro centrais fixas, uma por departamento, reutilizadas por todos os tickets. Os canais antigos permanecem preservados. A equipe encontra os chamados com `/atendimentos`. Veja [TICKETS.md](docs/TICKETS.md).
+
 **Estado da entrega:** implementação, verificações locais, publicação no GitHub, autenticação real, registro dos comandos e deploy gratuito executados. O acesso aos canais privados de boas-vindas e logs foi confirmado; o aceite final do fluxo com membros reais e publicações pela equipe permanece em aberto. O token não faz parte do repositório. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para as verificações e pendências.
 
 ## 1. Requisitos e versões

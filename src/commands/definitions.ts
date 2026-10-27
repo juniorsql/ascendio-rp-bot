@@ -6,7 +6,9 @@ const channels = [ChannelType.GuildText, ChannelType.GuildAnnouncement] as const
 const admin = (name: string, description: string, config = false) => new SlashCommandBuilder().setName(name).setDescription(description).setContexts(InteractionContextType.Guild)
   .setDefaultMemberPermissions(config ? PermissionFlagsBits.ManageGuild : PermissionFlagsBits.ManageMessages);
 export const commands = [
+  new SlashCommandBuilder().setName('atendimentos').setDescription('Veja os tickets abertos da sua equipe.').setContexts(InteractionContextType.Guild),
   admin('ticket', 'Configure e publique a central de atendimento.', true)
+    .addSubcommand(s => s.setName('topicos').setDescription('Ative ou atualize as centrais de tópicos privados.'))
     .addSubcommand(s => s.setName('recuperar').setDescription('Retome operações de tickets interrompidas.'))
     .addSubcommand(s => s.setName('status').setDescription('Veja os canais, as equipes e os atendimentos.'))
     .addSubcommand(s => s.setName('painel').setDescription('Publique ou atualize o painel de tickets.'))

@@ -39,7 +39,10 @@ async function main(): Promise<void> {
       try { await register(env); registered = true; } catch (error) { log('registration_failed', { code: errorCode(error) }, 'error'); }
     }
     if (ticketStore.snapshot().config.panelChannelId) {
-      try { await tickets.recover(); const messageId = await tickets.ensurePanel(); log('tickets_ready', { messageId }); }
+      try {
+        if (process.env.TICKETS_USE_THREADS === 'true' || ticketStore.snapshot().config.mode === 'thread') await tickets.enableThreads();
+        await tickets.recover(); const messageId = await tickets.ensurePanel(); log('tickets_ready', { messageId });
+      }
       catch (error) { log('tickets_setup_failed', { code: errorCode(error) }, 'error'); }
     }
   });
