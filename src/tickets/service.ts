@@ -3,7 +3,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFl
 import { errorCode, log } from '../logs/logger.js';
 import { safeText, text, UserError } from '../validation/input.js';
 import { departments, ticketLabels, TicketStore, type Department, type Ticket } from './store.js';
-import { assertHub, ensureHubs, findThread, threadName } from './thread-hubs.js';
+import { accessRole, assertHub, ensureHubs, findThread, grantHubAccess, threadName } from './thread-hubs.js';
 
 const none = { parse: [] as never[], repliedUser: false };
 const read = [P.ViewChannel, P.ReadMessageHistory];
@@ -90,6 +90,7 @@ export class Tickets {
         if (!role || role.id === guild.id || role.managed) throw new UserError('Escolha cargos próprios da equipe, sem @everyone ou integrações.');
       }
       if (c.mode === 'thread' && checkHubs) {
+        await accessRole(guild, c.routes[d].accessRoleId ?? '', d);
         const hub = await this.textChannel(c.routes[d].parentChannelId ?? '');
         assertHub(hub, guild.id, this.client.user!.id, d, c.routes[d]);
         if (!hub.permissionsFor(me)?.has([P.ViewChannel, P.ReadMessageHistory, P.CreatePrivateThreads, P.ManageThreads, P.SendMessagesInThreads])) throw new UserError('O bot precisa criar, gerenciar e enviar mensagens em tópicos privados na central.');
@@ -101,7 +102,7 @@ export class Tickets {
       const config = this.store.snapshot().config;
       await this.checkConfig({ ...config, mode: 'thread' }, false);
       const hubs = await ensureHubs(await this.guild(), config, this.client.user!.id);
-      await this.store.transact(s => { for (const d of departments) s.config.routes[d].parentChannelId = hubs[d]; s.config.mode = 'thread'; });
+      await this.store.transact(s => { for (const d of departments) Object.assign(s.config.routes[d], hubs[d]); s.config.mode = 'thread'; });
       await this.checkConfig();
     });
   }
@@ -132,12 +133,16 @@ export class Tickets {
   async open(ownerId: string, d: Department, subject: string, description: string): Promise<Ticket> {
     subject = text(subject, 100, 'Assunto'); description = text(description, 1800, 'Descrição');
     return this.exclusive(`owner:${ownerId}`, async () => {
-      await this.member(ownerId);
+      const owner = await this.member(ownerId);
       await this.checkConfig();
       const state = this.store.snapshot();
       let t = state.tickets.find(t => t.ownerId === ownerId && t.status !== 'closed');
       if (t && t.status !== 'creating') {
-        try { await this.channel(t.channelId!); return t; }
+        try {
+          await this.channel(t.channelId!);
+          if (t.kind === 'thread') await grantHubAccess(owner, state.config.routes[t.department], t.department);
+          return t;
+        }
         catch (e) {
           if ((e as { code?: number }).code !== 10003) throw e;
           await this.store.transact(s => { Object.assign(s.tickets.find(r => r.id === t!.id)!, { status: 'closed', closedAt: Date.now(), reason: 'Canal removido manualmente.' }); });
@@ -154,6 +159,7 @@ export class Tickets {
       }
       // A reserva sobrevive a erros REST e reinícios: o tópico é a chave de reconciliação.
       const guild = await this.guild();
+      if (t.kind === 'thread') await grantHubAccess(owner, state.config.routes[t.department], t.department);
       const channels = await guild.channels.fetch();
       let ch: TextChannel | ThreadChannel | undefined = t.channelId ? await this.channel(t.channelId) : t.kind === 'thread'
         ? t.creationAttempted ? await findThread(await this.textChannel(t.parentChannelId!), t) : undefined

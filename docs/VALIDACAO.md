@@ -8,7 +8,7 @@ Data: **23/10/2026**, horário de referência America/Sao_Paulo.
 | --- | --- |
 | Instalação das dependências pelo npm | Concluída; lockfile criado |
 | TypeScript estrito, incluindo fontes e testes | Passou |
-| Testes automatizados, incluindo publicações, cargo de entrada, canais e tópicos privados | **63 passaram, 0 falharam** |
+| Testes automatizados, incluindo publicações, cargo de entrada e tickets com setores ocultos | **69 passaram, 0 falharam** |
 | Compilação para `dist/` | Passou |
 | Testes executados diretamente com Node 24.22.1 | 28 passaram |
 | Criação e destruição de cliente Discord sem login, heap V8 de 128 MB | Passou; RSS observado de aproximadamente **76 MB** |
@@ -79,3 +79,8 @@ Use [ACEITE.md](ACEITE.md) para concluir e registrar a homologação operacional
 - Testes de migração idempotente, reutilização de quatro centrais, isolamento entre equipes, bloqueio por sobrescritas adulteradas, abertura interrompida antes do convite, resultado REST incerto com tópico arquivado, retomada do fechamento e compatibilidade com tickets antigos. `/atendimentos` testa resposta privada e bloqueio de usuário comum.
 - Teste real autenticado: quatro centrais fixas criadas, tópico privado com `invitable=false`, solicitante adicionado, persistência após reabrir armazenamento, prevenção de duplicidade, assumir, encerrar, `archived=true`, `locked=true` e mensagem original acessível. Todos os canais anteriores permaneceram presentes; **zero exclusões**. O tópico de teste foi preservado arquivado.
 - O teste real usa serviços internos e uma conta administrativa como solicitante. A privacidade dos membros comuns é coberta pelos testes de permissões e por inspeção das sobrescritas reais; a experiência com uma conta humana comum ainda requer aceite no Discord.
+
+## Centrais ocultas — 29/10/2026
+
+- Seis testes adicionais: centrais invisíveis antes da abertura, liberação apenas do setor escolhido, isolamento de tópicos entre solicitantes com o mesmo cargo, manutenção de acesso ao histórico após encerrar/reiniciar, falha de atribuição sem criar tópico, migração de participantes de tópicos arquivados e bloqueio de cargo de acesso adulterado.
+- Teste real: quatro cargos de acesso sem permissões globais, quatro centrais ocultas para a combinação @everyone + Convidado, liberação somente do setor com cargo correspondente, sem Gerenciar tópicos para solicitantes, atribuição real do cargo, abertura e encerramento com tópico arquivado/bloqueado. Todos os canais anteriores preservados; nenhuma exclusão. O teste usa uma conta administrativa e cálculo das permissões reais com papéis sintéticos de convidado.

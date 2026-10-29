@@ -8,6 +8,8 @@ A versão **1.2.1** também atribui o cargo configurado em `JOIN_ROLE_ID` aos no
 
 Na versão **1.3.0**, novos tickets podem usar **tópicos privados**, encerrados por arquivamento e bloqueio, sem exclusão. São quatro centrais fixas, uma por departamento, reutilizadas por todos os tickets. Os canais antigos permanecem preservados. A equipe encontra os chamados com `/atendimentos`. Veja [TICKETS.md](docs/TICKETS.md).
 
+Na versão **1.3.1**, as centrais ficam ocultas para membros sem atendimento. Abrir um ticket concede somente o cargo de acesso daquele setor, sem acesso aos tickets alheios. O cargo permanece após encerrar para consulta do próprio histórico; conversas antigas e suas participações são preservadas na migração.
+
 **Estado da entrega:** implementação, verificações locais, publicação no GitHub, autenticação real, registro dos comandos e deploy gratuito executados. O acesso aos canais privados de boas-vindas e logs foi confirmado; o aceite final do fluxo com membros reais e publicações pela equipe permanece em aberto. O token não faz parte do repositório. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para as verificações e pendências.
 
 ## 1. Requisitos e versões

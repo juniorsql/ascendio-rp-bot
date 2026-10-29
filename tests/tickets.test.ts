@@ -19,12 +19,12 @@ async function fixture(t: TestContext) {
   let sequence = 0;
   const id = () => String(153456789012345670n + BigInt(++sequence));
   const all = new PermissionsBitField([P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.EmbedLinks, P.AttachFiles, P.AddReactions, P.ManageChannels, P.ManageRoles, P.CreatePrivateThreads, P.ManageThreads, P.SendMessagesInThreads]);
-  const members = new Map<string, any>([ownerId, staffId, outsiderId, botId].map(userId => [userId, { id: userId, user: { bot: userId === botId }, permissions: userId === botId ? all : new PermissionsBitField(0n), roles: { cache: new Map(userId === staffId ? [[roleId, {}]] : []) } }]));
+  const members = new Map<string, any>([ownerId, staffId, outsiderId, botId].map(userId => [userId, { id: userId, user: { bot: userId === botId }, permissions: userId === botId ? all : new PermissionsBitField(0n), roles: { highest: { comparePositionTo: () => 1 }, cache: new Map(userId === staffId ? [[roleId, {}]] : []) } }]));
   const everyone = { id: guildId, name: '@everyone', managed: false };
-  const roles = new Map([[guildId, everyone], [roleId, { id: roleId, name: 'Suporte', managed: false }]]);
+  const roles = new Collection<string, any>([[guildId, everyone], [roleId, { id: roleId, name: 'Suporte', managed: false }]]);
   const channels = new Collection<string, any>();
   const creates: any[] = [], threadCreates: any[] = [], edits: any[] = [], sends: any[] = [];
-  let unknownCreate = false, failLog = false, failBeforeCreate = false, failInvite = false;
+  let unknownCreate = false, failLog = false, failBeforeCreate = false, failInvite = false, failGrant = false;
   function channel(channelId: string, type: ChannelType, overrides: any[] = []) {
     const messages = new Collection<string, any>();
     const ch: any = { id: channelId, guildId, type, topic: '', parentId: null, overrides,
@@ -71,7 +71,7 @@ async function fixture(t: TestContext) {
       setParent: async (parent: string, options: any) => { assert.equal(options.lockPermissions, false); ch.parentId = parent; return ch; },
       permissionOverwrites: { cache: new Collection(overrides.map((o: any) => [o.id, { id: o.id, type: o.type, allow: new PermissionsBitField(o.allow), deny: new PermissionsBitField(o.deny) }])) },
       memberIds: new Set([botId]),
-      members: { add: async (user: string) => { if (failInvite) throw new Error('Member add temporarily failed'); ch.memberIds.add(user); }, fetch: async (user: string) => { if (!ch.memberIds.has(user)) throw new Error('Not a member'); return { id: user }; } },
+      members: { add: async (user: string) => { if (failInvite) throw new Error('Member add temporarily failed'); ch.memberIds.add(user); }, fetch: async (user: string | object) => { if (typeof user !== 'string') return new Collection([...ch.memberIds].map((id: string) => [id, { id }])); if (!ch.memberIds.has(user)) throw new Error('Not a member'); return { id: user }; } },
       setArchived: async (value: boolean) => { ch.archived = value; return ch; },
       setLocked: async (value: boolean) => { ch.locked = value; return ch; },
       setInvitable: async (value: boolean) => { ch.invitable = value; return ch; },
@@ -85,18 +85,24 @@ async function fixture(t: TestContext) {
         fetchArchived: async () => ({ threads: channels.filter(c => c.type === ChannelType.PrivateThread && c.parentId === ch.id && c.archived), hasMore: false }),
       },
     };
+    ch.guild = channels.get(panelId)?.guild;
     channels.set(channelId, ch); return ch;
   }
   channel(panelId, ChannelType.GuildText); channel(logId, ChannelType.GuildText); channel(closedId, ChannelType.GuildCategory);
   for (const d of departments) channel(config.routes[d].categoryId, ChannelType.GuildCategory);
-  const guild: any = { id: guildId, roles: { everyone, fetch: async (id: string) => roles.get(id) }, members: { fetch: async ({ user }: { user: string }) => members.get(user), fetchMe: async () => members.get(botId) }, channels: { fetch: async (id?: string) => id ? channels.get(id) : channels, create: async (body: any) => {
+  const guild: any = { id: guildId, roles: { everyone, fetch: async (role?: string) => role ? roles.get(role) : roles, create: async (body: any) => { const role = { ...body, id: id(), managed: false, permissions: new PermissionsBitField(0n) }; roles.set(role.id, role); return role; } }, members: { fetch: async ({ user }: { user: string }) => members.get(user), fetchMe: async () => members.get(botId) }, channels: { fetch: async (id?: string) => id ? channels.get(id) : channels, create: async (body: any) => {
     creates.push(body); if (failBeforeCreate) throw new Error('Timed out before confirmation');
     const ch = channel(id(), body.type, body.permissionOverwrites); Object.assign(ch, { name: body.name, topic: body.topic, parentId: body.parent });
     if (unknownCreate) { unknownCreate = false; throw new Error('Timed out after channel creation'); } return ch;
   } } };
+  for (const member of members.values()) {
+    member.guild = guild;
+    member.roles.add = async (id: string) => { if (failGrant) throw new Error('Role grant failed'); member.roles.cache.set(id, roles.get(id)); return member; };
+  }
+  for (const ch of channels.values()) ch.guild = guild;
   const client = { user: { id: botId }, guilds: { fetch: async () => guild }, channels: { fetch: async (id: string) => { if (!channels.has(id)) throw Object.assign(new Error('Unknown channel'), { code: 10003 }); return channels.get(id); } } } as unknown as Client;
   const tickets = new Tickets(client, guildId, store);
-  return { dir, config, store, tickets, client, guild, members, channels, creates, threadCreates, sends, edits, setFailInvite: (value: boolean) => { failInvite = value; }, setUnknownCreate: () => { unknownCreate = true; }, setFailBeforeCreate: () => { failBeforeCreate = true; }, setFailLog: (value: boolean) => { failLog = value; } };
+  return { dir, config, store, tickets, client, guild, members, roles, channels, creates, threadCreates, sends, edits, setFailGrant: (value: boolean) => { failGrant = value; }, setFailInvite: (value: boolean) => { failInvite = value; }, setUnknownCreate: () => { unknownCreate = true; }, setFailBeforeCreate: () => { failBeforeCreate = true; }, setFailLog: (value: boolean) => { failLog = value; } };
 }
 
 test('painel tem os quatro assuntos e publicação repetida atualiza a mesma mensagem', async t => {
@@ -233,7 +239,7 @@ test('cargo de outro departamento e permissão global de tópicos não abrem tic
   const thread = f.channels.get(opened.channelId!)!;
   assert.equal(thread.permissionsFor(f.members.get(outsiderId)).has(P.ViewChannel), false);
   await assert.rejects(f.tickets.claim(opened.id, thread.id, outsiderId), /restrita/);
-  const acl = hubOverwrites(guildId, botId, [roleId]);
+  const acl = hubOverwrites(guildId, botId, [roleId], f.store.snapshot().config.routes.doacoes.accessRoleId!);
   assert.ok(new PermissionsBitField(acl[0]!.deny).has(P.ManageThreads));
   assert.ok(new PermissionsBitField(acl[0]!.deny).has([P.CreatePrivateThreads, P.CreatePublicThreads]));
 });
@@ -289,4 +295,64 @@ test('/atendimentos exibe links em resposta privada só para equipe autorizada',
   const ctx = { tickets: f.tickets, env: { guildId } } as Context;
   await onInteraction(i, ctx); assert.equal(replies[0].flags, 64); assert.ok(replies[1].content.includes(`<#${ticket.channelId}>`));
   i.user.id = outsiderId; await onInteraction(i, ctx); assert.match(replies.at(-1).content, /restrito à equipe/);
+});
+
+test('centrais ficam ocultas até abertura e só o setor escolhido é liberado', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  const before = f.store.snapshot().config;
+  for (const d of departments) assert.equal(f.channels.get(before.routes[d].parentChannelId!)!.permissionsFor(f.members.get(ownerId)).has(P.ViewChannel), false);
+  await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.');
+  for (const d of departments) assert.equal(f.channels.get(before.routes[d].parentChannelId!)!.permissionsFor(f.members.get(ownerId)).has(P.ViewChannel), d === 'suporte');
+  const access = before.routes.suporte.accessRoleId!;
+  assert.equal(f.members.get(ownerId)!.roles.cache.has(access), true);
+  assert.equal(f.roles.get(access)!.permissions.bitfield, 0n);
+  assert.equal(f.members.get(ownerId)!.roles.cache.has(roleId), false);
+});
+test('cargo de acesso compartilhado não permite ver o tópico de outro solicitante', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  const first = await f.tickets.open(ownerId, 'suporte', 'Primeiro', 'Descrição.');
+  const second = await f.tickets.open(outsiderId, 'suporte', 'Segundo', 'Descrição.');
+  assert.equal(f.channels.get(first.channelId!)!.permissionsFor(f.members.get(outsiderId)).has(P.ViewChannel), false);
+  assert.equal(f.channels.get(second.channelId!)!.permissionsFor(f.members.get(ownerId)).has(P.ViewChannel), false);
+  await assert.rejects(f.tickets.claim(first.id, first.channelId!, outsiderId), /restrita/);
+});
+test('encerramento e reinício preservam acesso ao histórico sem liberar demais setores', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  const opened = await f.tickets.open(ownerId, 'doacoes', 'Doação', 'Descrição.');
+  await f.tickets.close(opened.id, opened.channelId!, ownerId, 'Fim');
+  const access = f.store.snapshot().config.routes.doacoes.accessRoleId!;
+  const rolesBefore = f.roles.size;
+  const reopened = new TicketStore(f.dir); await reopened.init();
+  await new Tickets(f.client, guildId, reopened).enableThreads();
+  assert.equal(f.roles.size, rolesBefore); assert.equal(reopened.snapshot().config.routes.doacoes.accessRoleId, access);
+  const thread = f.channels.get(opened.channelId!)!;
+  assert.equal(thread.permissionsFor(f.members.get(ownerId)).has(P.ViewChannel), true);
+  assert.equal(thread.archived, true); assert.equal(thread.locked, true);
+  assert.equal(f.channels.get(reopened.snapshot().config.routes.bug.parentChannelId!)!.permissionsFor(f.members.get(ownerId)).has(P.ViewChannel), false);
+});
+test('falha ao atribuir cargo não cria tópico e reserva permite nova tentativa', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads(); f.setFailGrant(true);
+  await assert.rejects(f.tickets.open(ownerId, 'rp', 'Proposta', 'Descrição.'), /Role grant/);
+  assert.equal(f.threadCreates.length, 0); assert.equal(f.store.snapshot().tickets[0]!.creationAttempted, undefined);
+  f.setFailGrant(false); const opened = await f.tickets.open(ownerId, 'rp', 'Proposta', 'Descrição.');
+  assert.equal(opened.status, 'open'); assert.equal(f.threadCreates.length, 1);
+});
+test('migração preserva participantes de tópicos arquivados sem reabrir ou excluir', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  const opened = await f.tickets.open(ownerId, 'suporte', 'Antigo', 'Descrição.');
+  await f.tickets.close(opened.id, opened.channelId!, ownerId, 'Fim');
+  const access = f.store.snapshot().config.routes.suporte.accessRoleId!;
+  f.members.get(ownerId)!.roles.cache.delete(access);
+  await f.store.transact(s => { delete s.config.routes.suporte.accessRoleId; });
+  await f.tickets.enableThreads();
+  assert.equal(f.members.get(ownerId)!.roles.cache.has(access), true);
+  assert.equal(f.channels.get(opened.channelId!)!.archived, true);
+  assert.equal(f.channels.get(opened.channelId!)!.locked, true);
+});
+test('cargo de acesso adulterado não concede permissões ao novo solicitante', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  const access = f.store.snapshot().config.routes.bug.accessRoleId!;
+  f.roles.get(access)!.permissions = new PermissionsBitField(P.Administrator);
+  await assert.rejects(f.tickets.open(ownerId, 'bug', 'Erro', 'Descrição.'), /Cargo de acesso/);
+  assert.equal(f.members.get(ownerId)!.roles.cache.has(access), false); assert.equal(f.threadCreates.length, 0);
 });

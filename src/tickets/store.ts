@@ -13,7 +13,7 @@ export const ticketLabels: Record<Department, { label: string; emoji: string; de
 export interface TicketConfig {
   mode?: 'channel' | 'thread';
   panelChannelId: string; logChannelId: string; closedCategoryId: string;
-  routes: Record<Department, { categoryId: string; roleIds: string[]; parentChannelId?: string }>;
+  routes: Record<Department, { categoryId: string; roleIds: string[]; parentChannelId?: string; accessRoleId?: string }>;
 }
 export interface Ticket {
   id: string; ownerId: string; department: Department; categoryId: string; roleIds: string[];
@@ -40,6 +40,7 @@ export function validateTicketConfig(c: TicketConfig): void {
     if (!route || !Array.isArray(route.roleIds) || route.roleIds.length > 10) throw new UserError('Configuração de atendimento inválida.');
     if (route.categoryId) snowflake(route.categoryId);
     if (route.parentChannelId) snowflake(route.parentChannelId);
+    if (route.accessRoleId) snowflake(route.accessRoleId);
     for (const id of route.roleIds) snowflake(id);
   }
 }

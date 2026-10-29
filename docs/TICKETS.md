@@ -1,10 +1,16 @@
-# Central de atendimento — 1.3.0
+# Central de atendimento — 1.3.1
 
 ## Tópicos privados: modo atual
 
 Novos tickets são criados em tópicos **PrivateThread**, com convites de participantes desativados (`invitable: false`). O solicitante é adicionado explicitamente. A equipe acessa os tópicos por **Gerenciar tópicos**, concedido somente na central do respectivo departamento. Cada setor tem um canal fixo `atendimentos-suporte`, `atendimentos-doacoes`, `atendimentos-rp` ou `atendimentos-bug`, dentro da categoria existente.
 
-Essas centrais são visíveis aos membros para que os solicitantes possam acessar seus tópicos, mas não permitem postar diretamente nem criar tópicos manualmente. Ver uma central não permite ver os tickets de outras pessoas. @everyone tem Gerenciar tópicos negado; somente os cargos definidos para aquele setor e o próprio bot recebem essa permissão no canal. Administradores do Discord conservam seu acesso inerente. Mudanças manuais nas sobrescritas bloqueiam novas aberturas até a administração restaurar a central com `/ticket topicos`.
+As centrais são **ocultas por padrão** para @everyone e Convidado. Ao abrir o primeiro ticket em um setor, o bot atribui ao solicitante o cargo `Acesso a tickets • <setor>`, que não possui permissões no servidor, não fica destacado e não é mencionável. Sua única liberação é ver a central daquele setor e escrever em tópicos nos quais a pessoa já participa. O cargo não libera outros setores, postagem na central, criação de tópicos ou Gerenciar tópicos. Não permite ver os tickets das outras pessoas, mesmo que tenham o mesmo cargo de acesso.
+
+O cargo é preservado após encerrar para permitir consultar o próprio histórico. Portanto, um setor usado anteriormente continua visível ao participante. Não atribua esses cargos manualmente como cargos de staff. Removê-los impede acesso aos tópicos daquele setor até a próxima abertura, quando o bot restaura o acesso. Após sair e voltar ao servidor, o Discord remove os cargos anteriores; abrir um atendimento no setor restaura o cargo de acesso, mas não reinsere participações em tópicos removidas pelo próprio Discord.
+
+Somente os cargos de equipe configurados recebem Gerenciar tópicos na central, além do bot. Administradores do Discord conservam seu acesso inerente. Mudanças manuais nas sobrescritas bloqueiam novas aberturas até a administração restaurar a central com `/ticket topicos`. O bot valida que os cargos de acesso não possuem permissões globais ou funções administrativas antes de atribuí-los. Se falhar a atribuição, não cria o tópico e mantém uma reserva que pode ser retomada.
+
+Na atualização 1.3.1, participantes humanos dos tópicos privados próprios já existentes, inclusive arquivados, recebem o cargo de acesso antes de a central ser ocultada. A migração pagina os participantes e tópicos arquivados, não copia mensagens, não reabre nem exclui conversas. Cargos de acesso e IDs ficam persistidos junto aos IDs das centrais. Repetir a configuração ou reiniciar reutiliza os mesmos cargos. Usa apenas quatro cargos fixos de acesso, sem uma sobrescrita de canal por usuário.
 
 O encerramento bloqueia e arquiva o tópico **no mesmo canal pai**, sem excluir, copiar mensagens ou mover para Tickets Fechados. Mensagens e anexos continuam no próprio tópico. O registro privado mantém um link para a conversa, inclusive arquivada. Usuários sem Gerenciar tópicos não podem reabrir um tópico bloqueado. A equipe com essa permissão e administradores podem reabri-lo pela interface nativa do Discord; o estado administrativo do bot permanece encerrado.
 
