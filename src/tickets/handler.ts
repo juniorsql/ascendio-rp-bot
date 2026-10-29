@@ -45,7 +45,7 @@ export async function ticketInteraction(i: Interaction, ctx: Context): Promise<v
     if (sub === 'status') {
       const s = tickets.store.snapshot();
       const routes = Object.entries(s.config.routes).map(([d, r]) => `${ticketLabels[department(d)].label}: <#${r.categoryId || '0'}> • ${r.roleIds.map(id => `<@&${id}>`).join(', ') || 'Sem cargo'}`);
-      return void await i.editReply({ content: `**Central de atendimento**\nPainel: <#${s.config.panelChannelId || '0'}>\nRegistros: <#${s.config.logChannelId || '0'}>\nArquivo: <#${s.config.closedCategoryId || '0'}>\n${routes.join('\n')}\n\nAtivos: ${s.tickets.filter(t => t.status === 'open').length}\nPendentes de recuperação: ${s.tickets.filter(t => t.status === 'creating' || t.status === 'closing').length}\nEncerrados no índice: ${s.tickets.filter(t => t.status === 'closed').length}`, allowedMentions: { parse: [] } });
+      return void await i.editReply({ content: `**Central de atendimento**\nPainel: <#${s.config.panelChannelId || '0'}>\nRegistros: <#${s.config.logChannelId || '0'}>\nArquivo: <#${s.config.closedCategoryId || '0'}>\n${routes.join('\n')}\n\nAtivos: ${s.tickets.filter(t => t.status === 'open').length}\nPendentes de recuperação: ${s.tickets.filter(t => t.status === 'creating' || t.status === 'closing').length}\nAvisos pendentes ou incertos: ${s.tickets.filter(t => t.status === 'open' && ['pending', 'sending'].includes(t.notificationStatus ?? '')).length}\nEncerrados no índice: ${s.tickets.filter(t => t.status === 'closed').length}`, allowedMentions: { parse: [] } });
     }
     if (sub === 'canais') {
       const panelChannelId = i.options.getChannel('painel', true).id;

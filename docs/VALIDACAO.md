@@ -8,7 +8,7 @@ Data: **23/10/2026**, horário de referência America/Sao_Paulo.
 | --- | --- |
 | Instalação das dependências pelo npm | Concluída; lockfile criado |
 | TypeScript estrito, incluindo fontes e testes | Passou |
-| Testes automatizados, incluindo publicações, cargo de entrada e tickets com setores ocultos | **69 passaram, 0 falharam** |
+| Testes automatizados, incluindo publicações, cargo de entrada, setores ocultos e avisos de abertura | **75 passaram, 0 falharam** |
 | Compilação para `dist/` | Passou |
 | Testes executados diretamente com Node 24.22.1 | 28 passaram |
 | Criação e destruição de cliente Discord sem login, heap V8 de 128 MB | Passou; RSS observado de aproximadamente **76 MB** |
@@ -84,3 +84,9 @@ Use [ACEITE.md](ACEITE.md) para concluir e registrar a homologação operacional
 
 - Seis testes adicionais: centrais invisíveis antes da abertura, liberação apenas do setor escolhido, isolamento de tópicos entre solicitantes com o mesmo cargo, manutenção de acesso ao histórico após encerrar/reiniciar, falha de atribuição sem criar tópico, migração de participantes de tópicos arquivados e bloqueio de cargo de acesso adulterado.
 - Teste real: quatro cargos de acesso sem permissões globais, quatro centrais ocultas para a combinação @everyone + Convidado, liberação somente do setor com cargo correspondente, sem Gerenciar tópicos para solicitantes, atribuição real do cargo, abertura e encerramento com tópico arquivado/bloqueado. Todos os canais anteriores preservados; nenhuma exclusão. O teste usa uma conta administrativa e cálculo das permissões reais com papéis sintéticos de convidado.
+
+## Avisos de abertura — 29/10/2026
+
+- Seis testes adicionais: menções limitadas à equipe do setor, proteção contra texto malicioso no formulário, envio idempotente após nova solicitação/reinício, falha definitiva com retomada, resposta perdida após envio e recuperação sem duplicação, bloqueio por permissões adulteradas e compatibilidade sem notificações retroativas. Reservas de envio incerto não são repetidas sem comprovação.
+- TypeScript estrito, 75 testes e compilação passaram. Quatro canais privados de avisos foram preparados na API real e suas sobrescritas verificadas. O cálculo de permissões para @everyone + Convidado + os quatro cargos de acesso confirmou que nenhum aviso fica visível a solicitantes.
+- Não foi encontrado um ticket ativo do proprietário para comprovar um aviso de abertura real nessa verificação. O recebimento da menção pela equipe deve ser conferido na próxima abertura pelo painel; notificações push e som dependem das configurações individuais do Discord.

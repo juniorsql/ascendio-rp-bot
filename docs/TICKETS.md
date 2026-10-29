@@ -1,4 +1,4 @@
-# Central de atendimento — 1.3.1
+# Central de atendimento — 1.3.2
 
 ## Tópicos privados: modo atual
 
@@ -39,7 +39,17 @@ Cada canal contém somente sobrescritas explícitas de @everyone (sem acesso), s
 | Solicitar RP | Ticket Storytelling | Administrador e Storytelling |
 | Reportar bug | Ticket Bugs | Administrador, Moderador, Suporte e Desenvolvedor |
 
-O canal de entrada existente é reutilizado. Os registros ficam em um novo canal privado, `📁・registros-de-tickets`, visível ao bot e aos administradores com Administrator. Não há menções coletivas automáticas; textos do formulário são neutralizados.
+O canal de entrada existente é reutilizado. Os registros de encerramento ficam no canal privado `📁・registros-de-tickets`, visível ao bot e aos administradores com Administrator. Textos do formulário são neutralizados.
+
+## Avisos de abertura
+
+O modo de tópicos prepara também quatro canais privados fixos: `avisos-suporte`, `avisos-doacoes`, `avisos-rp` e `avisos-bug`. Cada um fica na categoria do setor e permite acesso somente à equipe configurada e ao bot, além dos administradores do Discord. Convidado e os cargos de acesso dos solicitantes não recebem acesso a esses avisos.
+
+Após confirmar a abertura, o bot envia um link para o atendimento e menciona apenas os cargos responsáveis pelo setor. Não usa @everyone, não notifica novamente o solicitante e não inclui assunto ou descrição nesse aviso. O bot precisa de Mencionar todos no canal de avisos para mencionar cargos não mencionáveis; `allowedMentions` limita o envio aos cargos autorizados. Som e notificações push dependem das preferências dos membros no Discord.
+
+O destino e o estado do aviso são persistidos antes do envio. Falhas definitivas podem ser retomadas por `/ticket recuperar`, na inicialização ou na recuperação periódica. Se a resposta REST ficar incerta, o bot procura sua própria mensagem pelo ID do ticket; sem comprovação, preserva a reserva e não repete menções automaticamente. `/ticket status` informa avisos pendentes ou incertos. Tickets anteriores à atualização não recebem avisos retroativos.
+
+As permissões exatas do destino são verificadas antes de enviar. Alterações manuais que abram o canal bloqueiam o aviso; `/ticket topicos` restaura os acessos e reutiliza os canais existentes. A falha do aviso não desfaz a abertura nem altera a privacidade do atendimento.
 
 ## Operação
 

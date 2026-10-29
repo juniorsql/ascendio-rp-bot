@@ -10,6 +10,8 @@ Na versão **1.3.0**, novos tickets podem usar **tópicos privados**, encerrados
 
 Na versão **1.3.1**, as centrais ficam ocultas para membros sem atendimento. Abrir um ticket concede somente o cargo de acesso daquele setor, sem acesso aos tickets alheios. O cargo permanece após encerrar para consulta do próprio histórico; conversas antigas e suas participações são preservadas na migração.
 
+Na versão **1.3.2**, cada novo atendimento envia um aviso privado em `avisos-<setor>`, mencionando apenas os cargos responsáveis e incluindo o link do ticket. O envio fica registrado para evitar notificações duplicadas após reinícios.
+
 **Estado da entrega:** implementação, verificações locais, publicação no GitHub, autenticação real, registro dos comandos e deploy gratuito executados. O acesso aos canais privados de boas-vindas e logs foi confirmado; o aceite final do fluxo com membros reais e publicações pela equipe permanece em aberto. O token não faz parte do repositório. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para as verificações e pendências.
 
 ## 1. Requisitos e versões

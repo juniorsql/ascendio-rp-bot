@@ -13,7 +13,7 @@ export const ticketLabels: Record<Department, { label: string; emoji: string; de
 export interface TicketConfig {
   mode?: 'channel' | 'thread';
   panelChannelId: string; logChannelId: string; closedCategoryId: string;
-  routes: Record<Department, { categoryId: string; roleIds: string[]; parentChannelId?: string; accessRoleId?: string }>;
+  routes: Record<Department, { categoryId: string; roleIds: string[]; parentChannelId?: string; accessRoleId?: string; notificationChannelId?: string }>;
 }
 export interface Ticket {
   id: string; ownerId: string; department: Department; categoryId: string; roleIds: string[];
@@ -22,6 +22,7 @@ export interface Ticket {
   claimedBy?: string; closedBy?: string; closedAt?: number; reason?: string; logMessageId?: string;
   creationAttempted?: boolean;
   kind?: 'thread'; parentChannelId?: string;
+  notificationStatus?: 'pending' | 'sending' | 'sent'; notificationChannelId?: string; notificationMessageId?: string;
 }
 export interface TicketState { version: 1; config: TicketConfig; panelMessageId?: string; tickets: Ticket[] }
 export function ticketDefaults(): TicketConfig {
@@ -41,6 +42,7 @@ export function validateTicketConfig(c: TicketConfig): void {
     if (route.categoryId) snowflake(route.categoryId);
     if (route.parentChannelId) snowflake(route.parentChannelId);
     if (route.accessRoleId) snowflake(route.accessRoleId);
+    if (route.notificationChannelId) snowflake(route.notificationChannelId);
     for (const id of route.roleIds) snowflake(id);
   }
 }
@@ -64,6 +66,9 @@ function validateState(s: TicketState): void {
     if (t.kind !== undefined && t.kind !== 'thread') throw new Error('Formato de ticket inválido.');
     if (t.parentChannelId) snowflake(t.parentChannelId);
     if (t.kind === 'thread' && !t.parentChannelId) throw new Error('Central do tópico ausente.');
+    if (t.notificationStatus !== undefined && !['pending', 'sending', 'sent'].includes(t.notificationStatus)) throw new Error('Notificação inválida.');
+    for (const id of [t.notificationChannelId, t.notificationMessageId]) if (id) snowflake(id);
+    if (t.notificationStatus && !t.notificationChannelId) throw new Error('Destino do aviso ausente.');
     text(t.subject, 100); text(t.description, 1800);
     if (!Number.isFinite(t.createdAt) || !['creating', 'open', 'closing', 'closed'].includes(t.status)) throw new Error('Ticket inválido.');
     if (t.status !== 'creating' && !t.channelId) throw new Error('Canal do ticket ausente.');

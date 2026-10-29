@@ -18,13 +18,14 @@ async function fixture(t: TestContext) {
   const store = new TicketStore(dir); await store.init(config);
   let sequence = 0;
   const id = () => String(153456789012345670n + BigInt(++sequence));
-  const all = new PermissionsBitField([P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.EmbedLinks, P.AttachFiles, P.AddReactions, P.ManageChannels, P.ManageRoles, P.CreatePrivateThreads, P.ManageThreads, P.SendMessagesInThreads]);
+  const all = new PermissionsBitField([P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.EmbedLinks, P.AttachFiles, P.AddReactions, P.ManageChannels, P.ManageRoles, P.CreatePrivateThreads, P.ManageThreads, P.SendMessagesInThreads, P.MentionEveryone]);
   const members = new Map<string, any>([ownerId, staffId, outsiderId, botId].map(userId => [userId, { id: userId, user: { bot: userId === botId }, permissions: userId === botId ? all : new PermissionsBitField(0n), roles: { highest: { comparePositionTo: () => 1 }, cache: new Map(userId === staffId ? [[roleId, {}]] : []) } }]));
   const everyone = { id: guildId, name: '@everyone', managed: false };
   const roles = new Collection<string, any>([[guildId, everyone], [roleId, { id: roleId, name: 'Suporte', managed: false }]]);
   const channels = new Collection<string, any>();
   const creates: any[] = [], threadCreates: any[] = [], edits: any[] = [], sends: any[] = [];
   let unknownCreate = false, failLog = false, failBeforeCreate = false, failInvite = false, failGrant = false;
+  let noticeFailure: 'before' | 'after' | null = null;
   function channel(channelId: string, type: ChannelType, overrides: any[] = []) {
     const messages = new Collection<string, any>();
     const ch: any = { id: channelId, guildId, type, topic: '', parentId: null, overrides,
@@ -50,13 +51,16 @@ async function fixture(t: TestContext) {
       } },
       send: async (body: any) => {
         if (body.nonce) assert.ok(body.nonce.length <= 25);
+        if (ch.topic.startsWith('ascendio-ticket-alerts:') && noticeFailure === 'before') throw Object.assign(new Error('Forbidden'), { status: 403 });
         if (channelId === logId && failLog) throw new Error('Log temporarily unavailable');
         sends.push({ channelId, body });
         const m: any = { id: id(), author: { id: botId }, content: body.content ?? '', components: body.components ?? [], edit: async (body: any) => { m.content = body.content ?? ''; m.components = body.components ?? []; edits.push(body); return m; } };
         // Real discord.js messages expose parsed components with customId.
         const normalized = () => { m.components = m.components.map((row: any) => { const json = row.toJSON ? row.toJSON() : row; return { components: json.components.map((c: any) => ({ customId: c.custom_id })) }; }); };
         const edit = m.edit; m.edit = async (body: any) => { await edit(body); normalized(); return m; }; normalized();
-        messages.set(m.id, m); return m;
+        messages.set(m.id, m);
+        if (ch.topic.startsWith('ascendio-ticket-alerts:') && noticeFailure === 'after') throw new Error('Timeout after notice delivery');
+        return m;
       },
       edit: async (body: any) => {
         if (body.permissionOverwrites) {
@@ -102,7 +106,7 @@ async function fixture(t: TestContext) {
   for (const ch of channels.values()) ch.guild = guild;
   const client = { user: { id: botId }, guilds: { fetch: async () => guild }, channels: { fetch: async (id: string) => { if (!channels.has(id)) throw Object.assign(new Error('Unknown channel'), { code: 10003 }); return channels.get(id); } } } as unknown as Client;
   const tickets = new Tickets(client, guildId, store);
-  return { dir, config, store, tickets, client, guild, members, roles, channels, creates, threadCreates, sends, edits, setFailGrant: (value: boolean) => { failGrant = value; }, setFailInvite: (value: boolean) => { failInvite = value; }, setUnknownCreate: () => { unknownCreate = true; }, setFailBeforeCreate: () => { failBeforeCreate = true; }, setFailLog: (value: boolean) => { failLog = value; } };
+  return { dir, config, store, tickets, client, guild, members, roles, channels, creates, threadCreates, sends, edits, setNoticeFailure: (value: typeof noticeFailure) => { noticeFailure = value; }, setFailGrant: (value: boolean) => { failGrant = value; }, setFailInvite: (value: boolean) => { failInvite = value; }, setUnknownCreate: () => { unknownCreate = true; }, setFailBeforeCreate: () => { failBeforeCreate = true; }, setFailLog: (value: boolean) => { failLog = value; } };
 }
 
 test('painel tem os quatro assuntos e publicação repetida atualiza a mesma mensagem', async t => {
@@ -209,10 +213,10 @@ test('fluxo de membro passa pelo roteador, exige painel atual e mantém resposta
   mode = 'select'; i.customId = 'ticket:select'; i.message.id = '133456789012345678'; await onInteraction(i as Interaction, ctx); assert.match(replies.at(-1).content, /não está mais ativo/);
 });
 
-test('ativação cria só quatro centrais reutilizáveis e mantém o painel existente', async t => {
+test('ativação reutiliza quatro centrais e quatro canais privados de avisos', async t => {
   const f = await fixture(t); const panel = await f.tickets.ensurePanel();
   await f.tickets.enableThreads(); await f.tickets.enableThreads();
-  assert.equal(f.creates.length, 4); assert.equal(f.store.snapshot().config.mode, 'thread');
+  assert.equal(f.creates.length, 8); assert.equal(f.store.snapshot().config.mode, 'thread');
   assert.equal(await f.tickets.ensurePanel(), panel);
   for (const d of departments) assert.equal(f.channels.get(f.store.snapshot().config.routes[d].parentChannelId!)!.topic, hubTopic(d));
 });
@@ -228,7 +232,7 @@ test('tópicos privados preservam isolamento e fecham arquivados sem excluir ou 
   await f.tickets.claim(opened.id, thread.id, staffId); assert.equal(thread.memberIds.has(staffId), false);
   await f.tickets.close(opened.id, thread.id, ownerId, 'Resolvido.');
   assert.equal(thread.archived, true); assert.equal(thread.locked, true); assert.equal(thread.parentId, parentId);
-  assert.equal(f.channels.has(thread.id), true); assert.equal(f.creates.length, 4); assert.equal(f.threadCreates.length, 1);
+  assert.equal(f.channels.has(thread.id), true); assert.equal(f.creates.length, 8); assert.equal(f.threadCreates.length, 1);
   assert.equal(f.store.snapshot().tickets[0]!.status, 'closed');
 });
 test('cargo de outro departamento e permissão global de tópicos não abrem tickets alheios', async t => {
@@ -355,4 +359,64 @@ test('cargo de acesso adulterado não concede permissões ao novo solicitante', 
   f.roles.get(access)!.permissions = new PermissionsBitField(P.Administrator);
   await assert.rejects(f.tickets.open(ownerId, 'bug', 'Erro', 'Descrição.'), /Cargo de acesso/);
   assert.equal(f.members.get(ownerId)!.roles.cache.has(access), false); assert.equal(f.threadCreates.length, 0);
+});
+
+test('abertura avisa só os cargos do setor em canal privado com link do ticket', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  const ticket = await f.tickets.open(ownerId, 'suporte', '@everyone <@&123456789012345678>', 'Não pode gerar menções extras.');
+  const route = f.store.snapshot().config.routes.suporte;
+  const alerts = f.channels.get(route.notificationChannelId!)!;
+  const notices = f.sends.filter(m => m.channelId === alerts.id);
+  assert.equal(notices.length, 1);
+  assert.deepEqual(notices[0].body.allowedMentions, { parse: [], roles: [roleId], users: [], repliedUser: false });
+  assert.match(notices[0].body.content, new RegExp(ticket.channelId!));
+  assert.doesNotMatch(notices[0].body.content, /@everyone|<@&123456789012345678>/);
+  assert.equal(alerts.permissionsFor(f.members.get(ownerId)).has(P.ViewChannel), false);
+  assert.equal(alerts.permissionsFor(f.members.get(staffId)).has(P.ViewChannel), true);
+  assert.equal(f.store.snapshot().tickets[0]!.notificationStatus, 'sent');
+});
+test('novo pedido e reinício não repetem a notificação do mesmo ticket', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.');
+  await f.tickets.open(ownerId, 'bug', 'Outro assunto', 'Descrição.');
+  const reopened = new TicketStore(f.dir); await reopened.init();
+  await new Tickets(f.client, guildId, reopened).recover();
+  assert.equal(f.sends.filter(m => m.body.nonce?.startsWith('open')).length, 1);
+});
+test('falha definitiva no aviso não impede ticket e recuperação tenta novamente', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads(); f.setNoticeFailure('before');
+  const opened = await f.tickets.open(ownerId, 'bug', 'Erro', 'Descrição.');
+  assert.equal(opened.status, 'open'); assert.equal(f.store.snapshot().tickets[0]!.notificationStatus, 'pending');
+  f.setNoticeFailure(null); await f.tickets.recover();
+  assert.equal(f.store.snapshot().tickets[0]!.notificationStatus, 'sent');
+  assert.equal(f.sends.filter(m => m.body.nonce?.startsWith('open')).length, 1);
+});
+test('timeout após enviar o aviso é reconciliado sem nova menção', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads(); f.setNoticeFailure('after');
+  await f.tickets.open(ownerId, 'rp', 'Proposta', 'Descrição.');
+  assert.equal(f.store.snapshot().tickets[0]!.notificationStatus, 'sending');
+  f.setNoticeFailure(null); const reopened = new TicketStore(f.dir); await reopened.init();
+  await new Tickets(f.client, guildId, reopened).recover();
+  assert.equal(reopened.snapshot().tickets[0]!.notificationStatus, 'sent');
+  assert.equal(f.sends.filter(m => m.body.nonce?.startsWith('open')).length, 1);
+});
+test('permissão de avisos adulterada impede vazamento de abertura', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  const alerts = f.channels.get(f.store.snapshot().config.routes.doacoes.notificationChannelId!)!;
+  alerts.permissionOverwrites.cache.set(outsiderId, { id: outsiderId, type: 1, allow: new PermissionsBitField(P.ViewChannel), deny: new PermissionsBitField(0n) });
+  const opened = await f.tickets.open(ownerId, 'doacoes', 'Doação', 'Descrição.');
+  assert.equal(opened.status, 'open'); assert.equal(f.store.snapshot().tickets[0]!.notificationStatus, 'pending');
+  assert.equal(f.sends.filter(m => m.channelId === alerts.id).length, 0);
+});
+test('tickets antigos não geram avisos retroativos e reserva incerta não é reenviada', async t => {
+  const f = await fixture(t); const old = await f.tickets.open(ownerId, 'suporte', 'Anterior', 'Descrição.');
+  await f.tickets.enableThreads(); await f.tickets.recover();
+  assert.equal(f.sends.filter(m => m.body.nonce?.startsWith('open')).length, 0);
+  await f.tickets.close(old.id, old.channelId!, ownerId, 'Fim');
+  const pending = await f.tickets.open(outsiderId, 'bug', 'Teste', 'Descrição.');
+  await f.store.transact(s => { const t = s.tickets.find(t => t.id === pending.id)!; t.notificationStatus = 'sending'; delete t.notificationMessageId; });
+  const alerts = f.channels.get(f.store.snapshot().config.routes.bug.notificationChannelId!)!;
+  alerts.messages.fetch = async () => new Collection();
+  const count = f.sends.length; await f.tickets.recover();
+  assert.equal(f.sends.length, count); assert.equal(f.store.snapshot().tickets.find(t => t.id === pending.id)!.notificationStatus, 'sending');
 });

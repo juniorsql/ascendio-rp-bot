@@ -4,6 +4,7 @@ import { errorCode, log } from '../logs/logger.js';
 import { safeText, text, UserError } from '../validation/input.js';
 import { departments, ticketLabels, TicketStore, type Department, type Ticket } from './store.js';
 import { accessRole, assertHub, ensureHubs, findThread, grantHubAccess, threadName } from './thread-hubs.js';
+import { assertNotificationChannel, ensureNotificationChannels, openingNotice } from './notifications.js';
 
 const none = { parse: [] as never[], repliedUser: false };
 const read = [P.ViewChannel, P.ReadMessageHistory];
@@ -102,7 +103,8 @@ export class Tickets {
       const config = this.store.snapshot().config;
       await this.checkConfig({ ...config, mode: 'thread' }, false);
       const hubs = await ensureHubs(await this.guild(), config, this.client.user!.id);
-      await this.store.transact(s => { for (const d of departments) Object.assign(s.config.routes[d], hubs[d]); s.config.mode = 'thread'; });
+      const alerts = await ensureNotificationChannels(await this.guild(), config, this.client.user!.id);
+      await this.store.transact(s => { for (const d of departments) Object.assign(s.config.routes[d], hubs[d], { notificationChannelId: alerts[d] }); s.config.mode = 'thread'; });
       await this.checkConfig();
     });
   }
@@ -141,6 +143,7 @@ export class Tickets {
         try {
           await this.channel(t.channelId!);
           if (t.kind === 'thread') await grantHubAccess(owner, state.config.routes[t.department], t.department);
+          await this.notifyOpened(t.id);
           return t;
         }
         catch (e) {
@@ -153,7 +156,7 @@ export class Tickets {
         if (state.tickets.some(t => t.ownerId === ownerId && Date.now() - t.createdAt < 60_000)) throw new UserError('Aguarde um minuto antes de abrir outro ticket.');
         if (state.tickets.filter(t => t.status !== 'closed').length >= 200) throw new UserError('A central atingiu o limite de atendimentos. Procure a administração.');
         const route = state.config.routes[d];
-        t = { id: randomUUID().replaceAll('-', '').slice(0, 20), ownerId, department: d, subject, description, categoryId: route.categoryId, roleIds: [...route.roleIds], createdAt: Date.now(), status: 'creating', ...(state.config.mode === 'thread' ? { kind: 'thread' as const, parentChannelId: route.parentChannelId } : {}) };
+        t = { id: randomUUID().replaceAll('-', '').slice(0, 20), ownerId, department: d, subject, description, categoryId: route.categoryId, roleIds: [...route.roleIds], createdAt: Date.now(), status: 'creating', ...(state.config.mode === 'thread' ? { kind: 'thread' as const, parentChannelId: route.parentChannelId } : {}), ...(route.notificationChannelId ? { notificationStatus: 'pending' as const, notificationChannelId: route.notificationChannelId } : {}) };
         const reservation = t;
         await this.store.transact(s => { if (s.tickets.some(t => t.ownerId === ownerId && t.status !== 'closed')) throw new UserError('Você já tem um ticket em andamento.'); s.tickets.push(reservation); });
       }
@@ -196,8 +199,42 @@ export class Tickets {
       t.channelId = ch.id; t.status = 'open';
       await this.store.transact(s => { Object.assign(s.tickets.find(r => r.id === t!.id)!, t); });
       log('ticket_opened', { userId: ownerId, channelId: ch.id });
+      await this.notifyOpened(t.id);
       return t;
     });
+  }
+  private async notifyOpened(id: string): Promise<void> {
+    try {
+      await this.exclusive(`notice:${id}`, async () => {
+        const t = this.store.snapshot().tickets.find(t => t.id === id);
+        if (!t || t.status !== 'open' || !t.notificationStatus || t.notificationStatus === 'sent') return;
+        const route = this.store.snapshot().config.routes[t.department];
+        const alerts = await this.textChannel(t.notificationChannelId!);
+        assertNotificationChannel(alerts, this.guildId, this.client.user!.id, t.department, route);
+        const guild = await this.guild(); const me = await guild.members.fetchMe({ force: true });
+        if (!alerts.permissionsFor(me)?.has([P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.MentionEveryone])) throw new UserError('O bot precisa mencionar os cargos no canal privado de avisos.');
+        const roles = t.roleIds.filter(id => route.roleIds.includes(id));
+        if (!roles.length) throw new UserError('A equipe do atendimento mudou. Revise o destinatário do aviso.');
+        const recent = await alerts.messages.fetch({ limit: 100 });
+        const old = recent.find(m => m.author.id === this.client.user!.id && m.content.includes(`Ticket: ${t.id}`));
+        if (old) {
+          await this.store.transact(s => { Object.assign(s.tickets.find(t => t.id === id)!, { notificationStatus: 'sent', notificationMessageId: old.id }); });
+          return;
+        }
+        // Resultado REST incerto não pode produzir novas menções sem comprovar o envio anterior.
+        if (t.notificationStatus === 'sending') throw new UserError('O aviso ficou sem confirmação; a reserva foi preservada para evitar notificações duplicadas.');
+        await this.store.transact(s => { s.tickets.find(t => t.id === id)!.notificationStatus = 'sending'; });
+        let message;
+        try { message = await alerts.send(openingNotice(t, this.guildId, roles)); }
+        catch (e) {
+          const status = (e as { status?: number }).status;
+          if (status && status >= 400 && status < 500 && status !== 429) await this.store.transact(s => { s.tickets.find(t => t.id === id)!.notificationStatus = 'pending'; });
+          throw e;
+        }
+        await this.store.transact(s => { Object.assign(s.tickets.find(t => t.id === id)!, { notificationStatus: 'sent', notificationMessageId: message.id }); });
+        log('ticket_opening_notified', { channelId: alerts.id, messageId: message.id, userId: t.ownerId });
+      });
+    } catch (e) { log('ticket_notification_pending', { code: errorCode(e) }, 'warn'); }
   }
   async getAuthorized(id: string, channelId: string, actorId: string, staffOnly = false): Promise<{ ticket: Ticket; channel: TextChannel | ThreadChannel; member: GuildMember }> {
     const ticket = this.store.snapshot().tickets.find(t => t.id === id);
@@ -289,5 +326,6 @@ export class Tickets {
       try { await this.exclusive(`ticket:${t.id}`, () => this.finishClose(t.id)); }
       catch (e) { log('ticket_recovery_pending', { channelId: t.channelId, code: errorCode(e) }, 'warn'); }
     }
+    for (const t of this.store.snapshot().tickets.filter(t => t.status === 'open' && ['pending', 'sending'].includes(t.notificationStatus ?? ''))) await this.notifyOpened(t.id);
   }
 }
