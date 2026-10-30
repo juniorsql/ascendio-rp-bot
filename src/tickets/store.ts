@@ -13,7 +13,7 @@ export const ticketLabels: Record<Department, { label: string; emoji: string; de
 export interface TicketConfig {
   mode?: 'channel' | 'thread';
   panelChannelId: string; logChannelId: string; closedCategoryId: string;
-  routes: Record<Department, { categoryId: string; roleIds: string[]; parentChannelId?: string; accessRoleId?: string; notificationChannelId?: string }>;
+  routes: Record<Department, { categoryId: string; roleIds: string[]; mentionRoleIds?: string[]; mentionUserIds?: string[]; parentChannelId?: string; accessRoleId?: string; notificationChannelId?: string }>;
 }
 export interface Ticket {
   id: string; ownerId: string; department: Department; categoryId: string; roleIds: string[];
@@ -44,6 +44,11 @@ export function validateTicketConfig(c: TicketConfig): void {
     if (route.accessRoleId) snowflake(route.accessRoleId);
     if (route.notificationChannelId) snowflake(route.notificationChannelId);
     for (const id of route.roleIds) snowflake(id);
+    for (const list of [route.mentionRoleIds, route.mentionUserIds]) {
+      if (list !== undefined && (!Array.isArray(list) || list.length > 10)) throw new UserError('Destinatários do atendimento inválidos.');
+      for (const id of list ?? []) snowflake(id);
+    }
+    if (route.mentionRoleIds?.some(id => !route.roleIds.includes(id))) throw new UserError('Mencione apenas cargos da equipe do setor.');
   }
 }
 export function ticketSeed(value: string | undefined): TicketConfig | undefined {

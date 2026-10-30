@@ -8,7 +8,7 @@ Data: **23/10/2026**, horário de referência America/Sao_Paulo.
 | --- | --- |
 | Instalação das dependências pelo npm | Concluída; lockfile criado |
 | TypeScript estrito, incluindo fontes e testes | Passou |
-| Testes automatizados, incluindo publicações, cargo de entrada, setores ocultos e avisos de abertura | **75 passaram, 0 falharam** |
+| Testes automatizados, incluindo publicações, cargo de entrada, setores ocultos, avisos e restauração de canais | **78 passaram, 0 falharam** |
 | Compilação para `dist/` | Passou |
 | Testes executados diretamente com Node 24.22.1 | 28 passaram |
 | Criação e destruição de cliente Discord sem login, heap V8 de 128 MB | Passou; RSS observado de aproximadamente **76 MB** |
@@ -90,3 +90,10 @@ Use [ACEITE.md](ACEITE.md) para concluir e registrar a homologação operacional
 - Seis testes adicionais: menções limitadas à equipe do setor, proteção contra texto malicioso no formulário, envio idempotente após nova solicitação/reinício, falha definitiva com retomada, resposta perdida após envio e recuperação sem duplicação, bloqueio por permissões adulteradas e compatibilidade sem notificações retroativas. Reservas de envio incerto não são repetidas sem comprovação.
 - TypeScript estrito, 75 testes e compilação passaram. Quatro canais privados de avisos foram preparados na API real e suas sobrescritas verificadas. O cálculo de permissões para @everyone + Convidado + os quatro cargos de acesso confirmou que nenhum aviso fica visível a solicitantes.
 - Não foi encontrado um ticket ativo do proprietário para comprovar um aviso de abertura real nessa verificação. O recebimento da menção pela equipe deve ser conferido na próxima abertura pelo painel; notificações push e som dependem das configurações individuais do Discord.
+
+## Restauração do modo tradicional — 30/10/2026
+
+- Três testes adicionais cobrem a transição sem alterar tickets existentes, encerramento de tópicos anteriores, abertura em canal individual, aviso direto idempotente, persistência após reiniciar, encerramento somente leitura em Tickets Fechados e registro com link.
+- Doações testa menção somente ao usuário autorizado, sem ping de cargo ou @everyone. Destinatário sem cargo é bloqueado; permissões adulteradas no canal impedem envio do aviso.
+- A restauração não exclui canais, tópicos, mensagens ou registros antigos. Os testes existentes continuam cobrindo categoria com 50 canais, falha no registro, isolamento de acesso e recuperação de aberturas incertas.
+- Teste real autenticado em Doações: criou um canal privado individual, mencionou somente o proprietário, persistiu a confirmação do aviso, encerrou somente para leitura, moveu para Tickets Fechados e enviou registro com link. O canal de teste foi preservado, sem exclusão. Todos os canais anteriores permaneceram presentes. O teste invoca os serviços internos; a interação humana no painel continua sujeita ao aceite.

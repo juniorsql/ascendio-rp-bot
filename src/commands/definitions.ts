@@ -8,6 +8,7 @@ const admin = (name: string, description: string, config = false) => new SlashCo
 export const commands = [
   new SlashCommandBuilder().setName('atendimentos').setDescription('Veja os tickets abertos da sua equipe.').setContexts(InteractionContextType.Guild),
   admin('ticket', 'Configure e publique a central de atendimento.', true)
+    .addSubcommand(s => s.setName('tradicional').setDescription('Volte aos canais individuais, preservando os tickets existentes.'))
     .addSubcommand(s => s.setName('topicos').setDescription('Ative ou atualize as centrais de tópicos privados.'))
     .addSubcommand(s => s.setName('recuperar').setDescription('Retome operações de tickets interrompidas.'))
     .addSubcommand(s => s.setName('status').setDescription('Veja os canais, as equipes e os atendimentos.'))

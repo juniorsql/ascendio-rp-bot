@@ -1,6 +1,16 @@
-# Central de atendimento — 1.3.2
+# Central de atendimento — 1.3.3
 
-## Tópicos privados: modo atual
+## Canais individuais: modo atual
+
+Por escolha do responsável, a versão 1.3.3 restaura o modo tradicional: cada nova abertura cria um canal privado na categoria do setor. O aviso menciona a equipe dentro do próprio ticket, sem depender de um canal separado de avisos. No Ascendios RP: Suporte menciona Suporte, Solicitar RP menciona Storytelling e Doações menciona somente o proprietário, sem mencionar o cargo CEO ou Coordenador. Bugs mantém a equipe técnica já configurada. Administradores do Discord conservam acesso inerente.
+
+Ao encerrar, o canal fica somente para leitura e vai para Tickets Fechados; o registro privado inclui o link do histórico. Se a categoria atingir 50 canais, o atendimento é encerrado e registrado, mas permanece na categoria de origem. Não existe exclusão automática. Um atendimento ativo por membro e o intervalo de um minuto continuam valendo.
+
+`/ticket tradicional` ativa esse modo e atualiza o mesmo painel. Tickets e tópicos existentes mantêm seus IDs e seu funcionamento anterior, inclusive o encerramento de um tópico já aberto. As centrais antigas e os arquivos não são removidos. O modo é persistido e não volta a tópicos por causa de um antigo `TICKETS_USE_THREADS=true`.
+
+Para a restauração na hospedagem, `TICKETS_USE_THREADS=false` altera uma configuração ainda em tópicos para canais na inicialização. Nessa transição aplica somente os cargos e destinatários das rotas do `TICKETS_CONFIG`; preserva canais configurados, painel, índice e históricos. Após a transição persistida, não reaplica a configuração inicial em todo reinício. IDs de pessoas a mencionar são conferidos contra a equipe atual antes do envio. Os avisos diretos mantêm reserva persistente e deduplicação; as menções do solicitante e de texto livre continuam neutralizadas.
+
+## Compatibilidade com tópicos privados
 
 Novos tickets são criados em tópicos **PrivateThread**, com convites de participantes desativados (`invitable: false`). O solicitante é adicionado explicitamente. A equipe acessa os tópicos por **Gerenciar tópicos**, concedido somente na central do respectivo departamento. Cada setor tem um canal fixo `atendimentos-suporte`, `atendimentos-doacoes`, `atendimentos-rp` ou `atendimentos-bug`, dentro da categoria existente.
 

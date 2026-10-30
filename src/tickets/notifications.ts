@@ -33,11 +33,12 @@ export async function ensureNotificationChannels(guild: Guild, config: TicketCon
   }
   return result;
 }
-export function openingNotice(t: Ticket, guildId: string, roleIds: string[]) {
+export function openingNotice(t: Ticket, guildId: string, roleIds: string[], userIds: string[] = []) {
   const roles = [...new Set(roleIds)];
+  const users = [...new Set(userIds)];
   return {
-    content: `${roles.map(id => `<@&${id}>`).join(' ')}\n**Novo atendimento • ${ticketLabels[t.department].label}**\nSolicitante: <@${t.ownerId}>\nAbrir atendimento: https://discord.com/channels/${guildId}/${t.channelId}\nTicket: ${t.id}`,
-    allowedMentions: { parse: [] as never[], roles, users: [] as string[], repliedUser: false },
+    content: `${[...roles.map(id => `<@&${id}>`), ...users.map(id => `<@${id}>`)].join(' ')}\n**Novo atendimento • ${ticketLabels[t.department].label}**\nSolicitante: <@${t.ownerId}>\nAbrir atendimento: https://discord.com/channels/${guildId}/${t.channelId}\nTicket: ${t.id}`,
+    allowedMentions: { parse: [] as never[], roles, users, repliedUser: false },
     nonce: `open${t.id}`, enforceNonce: true,
   };
 }

@@ -40,7 +40,9 @@ async function main(): Promise<void> {
     }
     if (ticketStore.snapshot().config.panelChannelId) {
       try {
-        if (process.env.TICKETS_USE_THREADS === 'true' || ticketStore.snapshot().config.mode === 'thread') await tickets.enableThreads();
+        const mode = ticketStore.snapshot().config.mode;
+        if (process.env.TICKETS_USE_THREADS === 'false' && mode !== 'channel') await tickets.enableChannels(ticketSeed(process.env.TICKETS_CONFIG)?.routes);
+        else if (mode === 'thread' || (mode === undefined && process.env.TICKETS_USE_THREADS === 'true')) await tickets.enableThreads();
         await tickets.recover(); const messageId = await tickets.ensurePanel(); log('tickets_ready', { messageId });
       }
       catch (error) { log('tickets_setup_failed', { code: errorCode(error) }, 'error'); }

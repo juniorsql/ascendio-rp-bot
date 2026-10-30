@@ -109,6 +109,61 @@ async function fixture(t: TestContext) {
   return { dir, config, store, tickets, client, guild, members, roles, channels, creates, threadCreates, sends, edits, setNoticeFailure: (value: typeof noticeFailure) => { noticeFailure = value; }, setFailGrant: (value: boolean) => { failGrant = value; }, setFailInvite: (value: boolean) => { failInvite = value; }, setUnknownCreate: () => { unknownCreate = true; }, setFailBeforeCreate: () => { failBeforeCreate = true; }, setFailLog: (value: boolean) => { failLog = value; } };
 }
 
+test('restaurar canais preserva tópicos existentes e arquiva novos canais com registro e aviso no ticket', async t => {
+  const f = await fixture(t); await f.tickets.enableThreads();
+  const old = await f.tickets.open(ownerId, 'suporte', 'Anterior', 'Tópico preservado.');
+  const before = f.store.snapshot().tickets;
+  await f.tickets.enableChannels();
+  assert.equal(f.store.snapshot().config.mode, 'channel');
+  assert.deepEqual(f.store.snapshot().tickets, before);
+  await f.tickets.close(old.id, old.channelId!, ownerId, 'Fim');
+  assert.equal(f.channels.get(old.channelId!)!.archived, true);
+  const opened = await f.tickets.open(outsiderId, 'rp', 'Novo', 'Canal individual.');
+  const ch = f.channels.get(opened.channelId!)!;
+  assert.equal(ch.type, ChannelType.GuildText); assert.equal(opened.kind, undefined);
+  assert.equal(ch.parentId, f.config.routes.rp.categoryId);
+  const notice = f.sends.filter(m => m.channelId === ch.id && m.body.content?.includes('Novo atendimento'));
+  assert.equal(notice.length, 1); assert.deepEqual(notice[0]!.body.allowedMentions.roles, [roleId]);
+  assert.deepEqual(notice[0]!.body.allowedMentions.users, []);
+  const reopened = new TicketStore(f.dir); await reopened.init();
+  await new Tickets(f.client, guildId, reopened).recover();
+  assert.equal(reopened.snapshot().config.mode, 'channel');
+  assert.equal(f.sends.filter(m => m.channelId === ch.id && m.body.content?.includes('Novo atendimento')).length, 1);
+  await f.tickets.close(opened.id, ch.id, outsiderId, 'Concluído');
+  assert.equal(ch.parentId, closedId);
+  assert.equal(ch.permissionsFor(f.members.get(outsiderId)).has(P.SendMessages), false);
+  assert.ok(f.sends.some(m => m.channelId === logId && m.body.content.includes(`<#${ch.id}>`)));
+});
+
+test('doações menciona somente responsável individual autorizado e nunca o cargo ou everyone', async t => {
+  const f = await fixture(t);
+  const routes = structuredClone(f.config.routes);
+  routes.doacoes.mentionRoleIds = []; routes.doacoes.mentionUserIds = [staffId];
+  await f.tickets.enableChannels(routes);
+  const opened = await f.tickets.open(ownerId, 'doacoes', 'Dúvida @everyone', 'Não mencionar <@&123456789012345678>.');
+  const notice = f.sends.find(m => m.channelId === opened.channelId && m.body.content?.includes('Novo atendimento'))!;
+  assert.deepEqual(notice.body.allowedMentions, { parse: [], roles: [], users: [staffId], repliedUser: false });
+  assert.ok(notice.body.content.startsWith(`<@${staffId}>\n`));
+  assert.doesNotMatch(notice.body.content, /@everyone|<@&/);
+  assert.equal(f.channels.get(opened.channelId!)!.permissionsFor(f.members.get(outsiderId)).has(P.ViewChannel), false);
+  await f.tickets.open(ownerId, 'doacoes', 'Repetido', 'Não repetir o aviso.');
+  assert.equal(f.sends.filter(m => m.body.content?.includes('Novo atendimento')).length, 1);
+});
+
+test('aviso direto bloqueia destinatário sem cargo e não vaza após adulteração de permissões', async t => {
+  const f = await fixture(t); const routes = structuredClone(f.config.routes);
+  routes.doacoes.mentionRoleIds = []; routes.doacoes.mentionUserIds = [outsiderId];
+  await f.tickets.enableChannels(routes);
+  const opened = await f.tickets.open(ownerId, 'doacoes', 'Privado', 'Descrição.');
+  assert.equal(f.store.snapshot().tickets[0]!.notificationStatus, 'pending');
+  assert.equal(f.sends.filter(m => m.body.content?.includes('Novo atendimento')).length, 0);
+  f.members.get(outsiderId)!.roles.cache.set(roleId, {});
+  const ch = f.channels.get(opened.channelId!)!;
+  ch.permissionOverwrites.cache.delete(guildId);
+  await f.tickets.recover();
+  assert.equal(f.sends.filter(m => m.body.content?.includes('Novo atendimento')).length, 0);
+});
+
 test('painel tem os quatro assuntos e publicação repetida atualiza a mesma mensagem', async t => {
   const f = await fixture(t); const id = await f.tickets.ensurePanel();
   assert.equal(await f.tickets.ensurePanel(), id); assert.equal(f.sends.length, 1);

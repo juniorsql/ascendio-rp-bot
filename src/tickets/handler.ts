@@ -29,6 +29,10 @@ export async function ticketInteraction(i: Interaction, ctx: Context): Promise<v
     if (!member.permissions.has(PermissionFlagsBits.ManageGuild)) throw new UserError('Você precisa da permissão Gerenciar servidor.');
     await i.deferReply({ flags: MessageFlags.Ephemeral });
     const sub = i.options.getSubcommand();
+    if (sub === 'tradicional') {
+      await tickets.enableChannels(); const id = await tickets.ensurePanel();
+      return void await i.editReply(`Canais individuais ativados. Encerrados irão para Tickets Fechados, com registro e histórico preservado. Painel: https://discord.com/channels/${i.guildId}/${tickets.store.snapshot().config.panelChannelId}/${id}`);
+    }
     if (sub === 'topicos') {
       await tickets.enableThreads(); const id = await tickets.ensurePanel();
       return void await i.editReply(`Tópicos privados ativados. Novos atendimentos serão arquivados sem exclusão. Painel: https://discord.com/channels/${i.guildId}/${tickets.store.snapshot().config.panelChannelId}/${id}`);
@@ -58,7 +62,11 @@ export async function ticketInteraction(i: Interaction, ctx: Context): Promise<v
       const role = i.options.getRole('cargo', true);
       if (role.id === i.guildId || role.managed) throw new UserError('Escolha um cargo próprio da equipe.');
       const remove = i.options.getString('acao') === 'remover';
-      await tickets.store.transact(s => { const r = s.config.routes[d]; r.categoryId = categoryId; r.roleIds = remove ? r.roleIds.filter(id => id !== role.id) : [...new Set([...r.roleIds, role.id])]; });
+      await tickets.store.transact(s => {
+        const r = s.config.routes[d]; r.categoryId = categoryId;
+        r.roleIds = remove ? r.roleIds.filter(id => id !== role.id) : [...new Set([...r.roleIds, role.id])];
+        if (remove && r.mentionRoleIds) r.mentionRoleIds = r.mentionRoleIds.filter(id => id !== role.id);
+      });
     } else throw new UserError('Subcomando de tickets desconhecido.');
     return void await i.editReply('Configuração salva. Use /ticket painel para validar os acessos e atualizar o painel.');
   }

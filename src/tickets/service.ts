@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits as P, StringSelectMenuBuilder, type Client, type Guild, type GuildMember, type OverwriteResolvable, type TextChannel, type ThreadChannel } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits as P, PermissionsBitField, StringSelectMenuBuilder, type Client, type Guild, type GuildMember, type OverwriteResolvable, type TextChannel, type ThreadChannel } from 'discord.js';
 import { errorCode, log } from '../logs/logger.js';
 import { safeText, text, UserError } from '../validation/input.js';
-import { departments, ticketLabels, TicketStore, type Department, type Ticket } from './store.js';
+import { departments, ticketLabels, TicketStore, validateTicketConfig, type Department, type Ticket, type TicketConfig } from './store.js';
 import { accessRole, assertHub, ensureHubs, findThread, grantHubAccess, threadName } from './thread-hubs.js';
 import { assertNotificationChannel, ensureNotificationChannels, openingNotice } from './notifications.js';
 
@@ -18,7 +18,7 @@ export function ticketOverwrites(guildId: string, botId: string, ownerId: string
     { id: guildId, type: 0, deny: [P.ViewChannel, ...never] },
     ...[...new Set(roleIds)].map(id => ({ id, type: 0 as const, allow, deny })),
     { id: ownerId, type: 1, allow, deny },
-    { id: botId, type: 1, allow: [...write, P.ManageChannels, P.ManageRoles], deny: never },
+    { id: botId, type: 1, allow: [...write, P.ManageChannels, P.ManageRoles, P.MentionEveryone], deny: never.filter(p => p !== P.MentionEveryone) },
   ];
 }
 export function ticketStaff(member: GuildMember, ticket: Pick<Ticket, 'roleIds'>): boolean {
@@ -108,6 +108,20 @@ export class Tickets {
       await this.checkConfig();
     });
   }
+  async enableChannels(routes?: TicketConfig['routes']): Promise<void> {
+    return this.exclusive('setup', async () => {
+      const config = this.store.snapshot().config;
+      const next: TicketConfig = { ...config, mode: 'channel', routes: structuredClone(config.routes) };
+      if (routes) for (const d of departments) {
+        const r = routes[d];
+        Object.assign(next.routes[d], { roleIds: r.roleIds, mentionRoleIds: r.mentionRoleIds, mentionUserIds: r.mentionUserIds });
+      }
+      validateTicketConfig(next); await this.checkConfig(next);
+      // Altera somente a configuração de novas aberturas, preservando tickets e participações.
+      await this.store.transact(s => { s.config = next; });
+      log('tickets_channel_mode', { guildId: this.guildId });
+    });
+  }
   async ensurePanel(): Promise<string> {
     return this.exclusive('panel', async () => {
       const state = this.store.snapshot();
@@ -156,7 +170,7 @@ export class Tickets {
         if (state.tickets.some(t => t.ownerId === ownerId && Date.now() - t.createdAt < 60_000)) throw new UserError('Aguarde um minuto antes de abrir outro ticket.');
         if (state.tickets.filter(t => t.status !== 'closed').length >= 200) throw new UserError('A central atingiu o limite de atendimentos. Procure a administração.');
         const route = state.config.routes[d];
-        t = { id: randomUUID().replaceAll('-', '').slice(0, 20), ownerId, department: d, subject, description, categoryId: route.categoryId, roleIds: [...route.roleIds], createdAt: Date.now(), status: 'creating', ...(state.config.mode === 'thread' ? { kind: 'thread' as const, parentChannelId: route.parentChannelId } : {}), ...(route.notificationChannelId ? { notificationStatus: 'pending' as const, notificationChannelId: route.notificationChannelId } : {}) };
+        t = { id: randomUUID().replaceAll('-', '').slice(0, 20), ownerId, department: d, subject, description, categoryId: route.categoryId, roleIds: [...route.roleIds], createdAt: Date.now(), status: 'creating', ...(state.config.mode === 'thread' ? { kind: 'thread' as const, parentChannelId: route.parentChannelId } : {}), ...(state.config.mode === 'thread' && route.notificationChannelId ? { notificationStatus: 'pending' as const, notificationChannelId: route.notificationChannelId } : {}) };
         const reservation = t;
         await this.store.transact(s => { if (s.tickets.some(t => t.ownerId === ownerId && t.status !== 'closed')) throw new UserError('Você já tem um ticket em andamento.'); s.tickets.push(reservation); });
       }
@@ -183,6 +197,9 @@ export class Tickets {
         }
       }
       const channel = ch;
+      if (!t.kind && state.config.mode === 'channel' && !t.notificationStatus) {
+        t.notificationStatus = 'pending'; t.notificationChannelId = ch.id;
+      }
       await this.store.transact(s => { s.tickets.find(r => r.id === t!.id)!.channelId = channel.id; });
       if (ch.type === ChannelType.PrivateThread) {
         if (t.kind !== 'thread' || ch.parentId !== t.parentChannelId || ch.ownerId !== this.client.user!.id) throw new UserError('Tópico de atendimento não corresponde ao registro.');
@@ -210,11 +227,23 @@ export class Tickets {
         if (!t || t.status !== 'open' || !t.notificationStatus || t.notificationStatus === 'sent') return;
         const route = this.store.snapshot().config.routes[t.department];
         const alerts = await this.textChannel(t.notificationChannelId!);
-        assertNotificationChannel(alerts, this.guildId, this.client.user!.id, t.department, route);
+        if (!t.kind && alerts.id === t.channelId) {
+          const expected = ticketOverwrites(this.guildId, this.client.user!.id, t.ownerId, t.roleIds);
+          if (alerts.topic !== topic(t) || alerts.parentId !== t.categoryId || alerts.permissionOverwrites.cache.size !== expected.length || expected.some(o => {
+            const actual = alerts.permissionOverwrites.cache.get(String(o.id));
+            return !actual || actual.type !== o.type || actual.allow.bitfield !== new PermissionsBitField(o.allow).bitfield || actual.deny.bitfield !== new PermissionsBitField(o.deny).bitfield;
+          })) throw new UserError('O acesso do canal do ticket foi alterado; o aviso não foi enviado.');
+        } else assertNotificationChannel(alerts, this.guildId, this.client.user!.id, t.department, route);
         const guild = await this.guild(); const me = await guild.members.fetchMe({ force: true });
         if (!alerts.permissionsFor(me)?.has([P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.MentionEveryone])) throw new UserError('O bot precisa mencionar os cargos no canal privado de avisos.');
-        const roles = t.roleIds.filter(id => route.roleIds.includes(id));
-        if (!roles.length) throw new UserError('A equipe do atendimento mudou. Revise o destinatário do aviso.');
+        const roles = (route.mentionRoleIds ?? t.roleIds).filter(id => t.roleIds.includes(id) && route.roleIds.includes(id));
+        const users: string[] = [];
+        for (const id of route.mentionUserIds ?? []) {
+          const member = await this.member(id);
+          if (!ticketStaff(member, t) || !ticketStaff(member, route)) throw new UserError('O destinatário não pertence à equipe do setor.');
+          users.push(id);
+        }
+        if (!roles.length && !users.length) throw new UserError('A equipe do atendimento mudou. Revise o destinatário do aviso.');
         const recent = await alerts.messages.fetch({ limit: 100 });
         const old = recent.find(m => m.author.id === this.client.user!.id && m.content.includes(`Ticket: ${t.id}`));
         if (old) {
@@ -225,7 +254,7 @@ export class Tickets {
         if (t.notificationStatus === 'sending') throw new UserError('O aviso ficou sem confirmação; a reserva foi preservada para evitar notificações duplicadas.');
         await this.store.transact(s => { s.tickets.find(t => t.id === id)!.notificationStatus = 'sending'; });
         let message;
-        try { message = await alerts.send(openingNotice(t, this.guildId, roles)); }
+        try { message = await alerts.send(openingNotice(t, this.guildId, roles, users)); }
         catch (e) {
           const status = (e as { status?: number }).status;
           if (status && status >= 400 && status < 500 && status !== 429) await this.store.transact(s => { s.tickets.find(t => t.id === id)!.notificationStatus = 'pending'; });
