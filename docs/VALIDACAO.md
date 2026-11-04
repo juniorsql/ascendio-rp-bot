@@ -8,7 +8,7 @@ Data: **23/10/2026**, horário de referência America/Sao_Paulo.
 | --- | --- |
 | Instalação das dependências pelo npm | Concluída; lockfile criado |
 | TypeScript estrito, incluindo fontes e testes | Passou |
-| Testes automatizados, incluindo publicações, recuperação do cargo de entrada, setores ocultos, avisos e restauração de canais | **85 passaram, 0 falharam** |
+| Testes automatizados, incluindo publicações, botões de URL, cargo de entrada e tickets | **92 passaram, 0 falharam** |
 | Compilação para `dist/` | Passou |
 | Testes executados diretamente com Node 24.22.1 | 28 passaram |
 | Criação e destruição de cliente Discord sem login, heap V8 de 128 MB | Passou; RSS observado de aproximadamente **76 MB** |
@@ -103,3 +103,9 @@ Use [ACEITE.md](ACEITE.md) para concluir e registrar a homologação operacional
 - Auditoria REST real: cargo Candidato a Hogwarts configurado na hospedagem, permissão Gerenciar cargos, hierarquia superior e Guild Members Intent confirmados. Entre 65 membros, uma pessoa recente estava sem cargo e com triagem pendente; outra entrada recente já tinha cargos de equipe e foi excluída da recuperação.
 - Sete testes adicionais: atribuição imediata inclusive durante triagem pendente, atualização sem repetir boas-vindas, atualização de apelido/cargo sem nova entrada, recuperação somente de recentes sem cargos, repetição após falha temporária, proteção contra aprovação durante a varredura, conclusão com cache parcial, paginação sem cache, limite de atribuições e varreduras concorrentes.
 - TypeScript estrito, 85 testes e compilação passaram. Nenhuma entrada de usuário real foi simulada. O responsável confirmou que a atribuição deve ocorrer imediatamente ao entrar, sem aguardar a triagem do Discord.
+
+## Botões de URL e cargo de acesso antecipado — 04/11/2026
+
+- Sete testes adicionais cobrem validação de nome/URL/quantidade, URLs incluídas na deduplicação, payload Link sem custom ID, composição e edição em prévia, preservação ao alterar cor/conteúdo, remoção, uso em regras, bloqueio de outro usuário, falha da prévia e edição concorrente com confirmação.
+- TypeScript estrito, 92 testes e compilação passaram. Os envios são simulados: nenhum anúncio público foi criado automaticamente para testar a função.
+- Cargo real `🎟️ Acesso antecipado` criado em dourado, sem permissões administrativas ou atribuição automática. A existência e os dados do cargo foram confirmados pela API, preservando os demais cargos.

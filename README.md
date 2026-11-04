@@ -18,6 +18,8 @@ Na versão **1.3.4**, o cargo de entrada atual é **Candidato a Hogwarts**. Por 
 
 A recuperação usa páginas REST de até 200 membros com cache desativado, no máximo 20 páginas e 25 atribuições por execução; o restante fica para a próxima rodada. Reconfere o membro antes de atribuir, preserva os outros cargos e não remove cargos. Registros `join_role_assigned` e `join_role_recovery` permitem acompanhar o resultado sem armazenar conversas. A atribuição funciona independentemente da configuração de tickets.
 
+A versão **1.3.5** permite até cinco **botões de URL** por publicação. Eles aparecem abaixo do embed, com o nome escolhido, e abrem o site diretamente. São configurados na prévia privada, sem aumentar o formulário principal de composição.
+
 **Estado da entrega:** implementação, verificações locais, publicação no GitHub, autenticação real, registro dos comandos e deploy gratuito executados. O acesso aos canais privados de boas-vindas e logs foi confirmado; o aceite final do fluxo com membros reais e publicações pela equipe permanece em aberto. O token não faz parte do repositório. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para as verificações e pendências.
 
 ## 1. Requisitos e versões
@@ -137,7 +139,16 @@ Inscrições | Consulte a equipe responsável | nao
 
 São permitidos dez campos no formulário. `sim` exibe o campo lado a lado quando o Discord tiver espaço. Use URLs HTTPS de arquivos de imagem públicos. O bot valida o endereço, mas não baixa a imagem e não verifica seu MIME, existência ou licença; a renderização depende do Discord. Domínios podem resolver para redes privadas: o bot nunca os acessa diretamente. Use preferencialmente o CDN do Discord ou um provedor público da comunidade.
 
-A prévia é privada, informa o destino e oferece **Publicar**, **Cancelar**, **Editar conteúdo**, **Ativar @everyone** e um menu de cores. Ela expira 15 minutos após a criação. Há até cinco rascunhos por autor e cem no total; rascunhos não sobrevivem ao reinício. Nenhuma publicação é enviada antes da confirmação. Um rascunho preserva o conteúdo visual aprovado; mudanças posteriores na configuração só se refletem quando ele é editado ou recriado.
+A prévia é privada, informa o destino e oferece **Publicar**, **Cancelar**, **Editar conteúdo**, **Botões de URL**, **Ativar @everyone** e um menu de cores. Ela expira 15 minutos após a criação. Há até cinco rascunhos por autor e cem no total; rascunhos não sobrevivem ao reinício. Nenhuma publicação é enviada antes da confirmação. Um rascunho preserva o conteúdo visual aprovado; mudanças posteriores na configuração só se refletem quando ele é editado ou recriado.
+
+Para adicionar links, clique em **Botões de URL** e preencha uma linha por botão:
+
+```text
+Discord | https://discord.gg/seu-convite
+Site | https://example.com
+```
+
+Use até cinco linhas, com nome de até 80 caracteres e URL HTTPS pública de até 512 caracteres. Deixe o formulário vazio para remover todos os botões. Confira os botões reais na prévia e clique em **Publicar**. Alterar cor ou conteúdo preserva os links. Funciona também na prévia de `/regras`. Somente os botões de link são enviados ao canal; os controles administrativos permanecem na prévia privada. URLs fazem parte da deduplicação, e uma falha ao atualizar a prévia mantém a configuração anterior dos botões. O bot não acessa as URLs nem envia token ao site.
 
 ### Notificar com @everyone
 

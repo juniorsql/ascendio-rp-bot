@@ -6,10 +6,10 @@ import { join } from 'node:path';
 import { PermissionFlagsBits, PermissionsBitField } from 'discord.js';
 import { defaults } from '../src/config/defaults.js';
 import { loadEnv } from '../src/config/env.js';
-import { color, fields, imageUrl, safeText, validateEmbeds } from '../src/validation/input.js';
+import { color, fields, imageUrl, safeText, validateEmbeds, urlButtons } from '../src/validation/input.js';
 import { postEmbed, rulesEmbeds, welcomeEmbed } from '../src/templates/embeds.js';
 import { Store } from '../src/services/store.js';
-import { Drafts, fingerprint, publish, type Draft } from '../src/services/drafts.js';
+import { Drafts, fingerprint, publicationOptions, publish, type Draft } from '../src/services/drafts.js';
 import { authorized } from '../src/services/discord.js';
 import { commands } from '../src/commands/definitions.js';
 import { controls, postForm } from '../src/components/forms.js';
@@ -29,6 +29,29 @@ test('URLs aceitam HTTPS e rejeitam protocolos, IPs, credenciais e destinos loca
 test('menções em texto são neutralizadas', () => {
   const value = safeText('@everyone @here <@123456789012345678> <@&123456789012345678>');
   assert.ok(!value.includes('@everyone')); assert.ok(!value.includes('@here')); assert.ok(!/<@&?\d/.test(value));
+});
+
+test('botões de URL validam nome, HTTPS público, limite de 5 e URL de até 512 caracteres', () => {
+  assert.deepEqual(urlButtons('Discord | https://discord.gg/exemplo\nSite | https://example.com'), [
+    { label: 'Discord', url: 'https://discord.gg/exemplo' }, { label: 'Site', url: 'https://example.com/' },
+  ]);
+  assert.deepEqual(urlButtons(' \n '), []);
+  for (const value of ['Sem separador', '| https://example.com', 'A |', `${'A'.repeat(81)} | https://example.com`, 'A | https://user:secret@example.com', 'A | http://example.com', 'A | javascript:alert(1)', 'A | https://localhost', 'A | https://127.0.0.1', `A | https://example.com/${'x'.repeat(500)}`, Array(6).fill('A | https://example.com').join('\n')]) assert.throws(() => urlButtons(value));
+  assert.equal(urlButtons(Array(5).fill('A | https://example.com').join('\n')).length, 5);
+});
+
+test('botões entram na deduplicação e no payload público como links sem comandos administrativos', () => {
+  const a = makeDraft(), b = makeDraft();
+  assert.equal(fingerprint(a), fingerprint(b));
+  a.links = urlButtons('Discord | https://discord.gg/exemplo');
+  assert.notEqual(fingerprint(a), fingerprint(b));
+  b.links = urlButtons('Discord | https://discord.gg/exemplo');
+  assert.equal(fingerprint(a), fingerprint(b));
+  b.links[0]!.url = 'https://discord.gg/outro'; assert.notEqual(fingerprint(a), fingerprint(b));
+  const payload = publicationOptions(a, 'synthetic-nonce');
+  const row = (payload.components![0] as { toJSON(): any }).toJSON();
+  assert.deepEqual(row.components.map((c: any) => ({ style: c.style, label: c.label, url: c.url, customId: c.custom_id })), [{ style: 5, label: 'Discord', url: 'https://discord.gg/exemplo', customId: undefined }]);
+  assert.deepEqual(payload.allowedMentions?.parse, []);
 });
 test('campos e cores validam formato e limites', () => {
   assert.equal(color('#B49A61'), 0xb49a61); assert.throws(() => color('red'));

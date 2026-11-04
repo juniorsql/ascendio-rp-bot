@@ -56,6 +56,68 @@ test('fluxo /anuncio → modal → prévia privada → confirmação envia embed
   assert.ok(!f.sent[0].embeds[0].description.includes('@everyone')); assert.equal(f.ctx.store.snapshot().receipts[0]!.status, 'sent');
   await onInteraction(f.interaction('button', { customId }), f.ctx); assert.equal(f.sent.length, 1);
 });
+
+test('botões de URL são editados na prévia, sobrevivem a cor/conteúdo e só aparecem no envio confirmado', async t => {
+  const f = await setup(t);
+  const post = { kind: 'comunicado' as const, title: 'Discord oficial', description: 'Faça parte da comunidade.', image: '', thumbnail: '', fields: [] };
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config) });
+  await onInteraction(f.interaction('button', { customId: `links:${d.id}` }), f.ctx);
+  const modal = f.replies.at(-1); assert.equal(modal.custom_id, `links:edit:${d.id}`);
+  await onInteraction(f.interaction('modal', { customId: modal.custom_id, isFromMessage: () => true, fields: { getTextInputValue: () => 'Discord | https://discord.gg/exemplo' } }), f.ctx);
+  assert.equal(f.sent.length, 0); assert.equal(d.links[0]!.label, 'Discord');
+  const preview = f.replies.at(-1), link = preview.components.at(-1).toJSON().components[0];
+  assert.equal(link.style, 5); assert.equal(link.url, 'https://discord.gg/exemplo');
+  await onInteraction(f.interaction('button', { customId: `links:${d.id}` }), f.ctx);
+  assert.match(f.replies.at(-1).components[0].components[0].value, /Discord \| https:/);
+  await onInteraction(f.interaction('select', { customId: `theme:${d.id}`, values: [String(0x202f4b)] }), f.ctx);
+  const input: Record<string,string> = { title: 'Convite atualizado', description: 'Conheça a comunidade.', image: '', thumbnail: '', fields: '' };
+  await onInteraction(f.interaction('modal', { customId: `post:edit:${d.id}`, isFromMessage: () => true, fields: { getTextInputValue: (key: string) => input[key] } }), f.ctx);
+  assert.equal(d.links.length, 1); assert.equal(f.sent.length, 0);
+  await onInteraction(f.interaction('button', { customId: `confirm:${d.id}` }), f.ctx);
+  assert.equal(f.sent.length, 1); assert.equal(f.sent[0].embeds[0].title, input.title);
+  assert.equal(f.sent[0].components.length, 1);
+  assert.deepEqual(f.sent[0].components[0].toJSON().components.map((c: any) => [c.style,c.label,c.url,c.custom_id]), [[5,'Discord','https://discord.gg/exemplo',undefined]]);
+});
+
+test('deixar formulário de botões vazio remove links e funciona também na prévia de regras', async t => {
+  const f = await setup(t), d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, embeds: [{ title: 'Regulamento' }], links: [{ label: 'Site', url: 'https://example.com' }] });
+  await onInteraction(f.interaction('button', { customId: `links:${d.id}` }), f.ctx);
+  await onInteraction(f.interaction('modal', { customId: `links:edit:${d.id}`, isFromMessage: () => true, fields: { getTextInputValue: () => '' } }), f.ctx);
+  assert.deepEqual(d.links, []); assert.equal(f.sent.length, 0);
+  await onInteraction(f.interaction('button', { customId: `confirm:${d.id}` }), f.ctx);
+  assert.deepEqual(f.sent[0].components, []);
+});
+
+test('URL inválida, excesso e edição por outro usuário não alteram rascunho nem publicam', async t => {
+  const f = await setup(t), d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, embeds: [{ title: 'Teste' }], links: [{ label: 'Site', url: 'https://example.com' }] });
+  const original = structuredClone(d.links);
+  for (const value of ['Discord | javascript:alert(1)', Array(6).fill('Site | https://example.com').join('\n')]) {
+    await onInteraction(f.interaction('modal', { customId: `links:edit:${d.id}`, fields: { getTextInputValue: () => value } }), f.ctx);
+    assert.deepEqual(d.links, original); assert.equal(d.busy, false);
+  }
+  await onInteraction(f.interaction('button', { customId: `links:${d.id}`, user: { id: '923456789012345678' } }), f.ctx);
+  assert.match(f.replies.at(-1).content, /outro administrador/);
+  assert.deepEqual(d.links, original); assert.equal(f.sent.length, 0);
+});
+
+test('falha na atualização da prévia preserva botões anteriores', async t => {
+  const f = await setup(t), d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, embeds: [{ title: 'Teste' }], links: [{ label: 'Antigo', url: 'https://example.com/' }] });
+  await onInteraction(f.interaction('modal', { customId: `links:edit:${d.id}`, isFromMessage: () => true, fields: { getTextInputValue: () => 'Novo | https://discord.gg/exemplo' }, editReply: async () => { throw new Error('Preview unavailable'); } }), f.ctx);
+  assert.deepEqual(d.links, [{ label: 'Antigo', url: 'https://example.com/' }]);
+  assert.equal(d.busy, false); assert.equal(f.sent.length, 0);
+});
+
+test('edição de botões em andamento bloqueia confirmação concorrente', async t => {
+  const f = await setup(t), d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, embeds: [{ title: 'Teste' }] });
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; }), started = new Promise<void>(resolve => { entered = resolve; });
+  const pending = onInteraction(f.interaction('modal', { customId: `links:edit:${d.id}`, isFromMessage: () => true, fields: { getTextInputValue: () => 'Site | https://example.com' }, deferUpdate: async () => { entered(); await gate; } }), f.ctx);
+  await started;
+  await onInteraction(f.interaction('button', { customId: `confirm:${d.id}` }), f.ctx);
+  assert.match(f.replies.at(-1).content, /processada/); assert.equal(f.sent.length, 0);
+  release(); await pending;
+  assert.equal(d.links.length, 1); assert.equal(d.busy, false);
+});
 test('usuário comum não abre modal e perda de permissão antes de confirmar bloqueia envio', async t => {
   const f = await setup(t); f.setPermissions(0n);
   await onInteraction(f.interaction('command', { commandName: 'evento' }), f.ctx);

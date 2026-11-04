@@ -1,6 +1,7 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { palette } from '../config/defaults.js';
 import type { Draft } from '../services/drafts.js';
+import { linkRows } from './link-buttons.js';
 export interface Input { id: string; label: string; value?: string; max: number; required?: boolean; paragraph?: boolean; placeholder?: string }
 export function form(id: string, title: string, inputs: Input[]): ModalBuilder {
   return new ModalBuilder().setCustomId(id).setTitle(title).addComponents(inputs.map(f => {
@@ -27,9 +28,14 @@ export function controls(draft: Draft) {
     new ButtonBuilder().setCustomId(`cancel:${draft.id}`).setLabel('Cancelar').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`notify:${draft.id}`).setLabel(draft.notifyEveryone ? 'Desativar @everyone' : 'Ativar @everyone').setStyle(draft.notifyEveryone ? ButtonStyle.Primary : ButtonStyle.Secondary),
   );
-  if (!draft.post) return [row];
-  row.addComponents(new ButtonBuilder().setCustomId(`edit:${draft.id}`).setLabel('Editar conteúdo').setStyle(ButtonStyle.Primary));
+  if (draft.post) row.addComponents(new ButtonBuilder().setCustomId(`edit:${draft.id}`).setLabel('Editar conteúdo').setStyle(ButtonStyle.Primary));
+  row.addComponents(new ButtonBuilder().setCustomId(`links:${draft.id}`).setLabel('Botões de URL').setStyle(ButtonStyle.Secondary));
+  if (!draft.post) return [row, ...linkRows(draft.links)];
   const theme = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId(`theme:${draft.id}`).setPlaceholder('Escolher cor temática')
     .addOptions(Object.entries(palette).map(([name, value]) => ({ label: name[0]!.toUpperCase() + name.slice(1), value: String(value) }))));
-  return [row, theme];
+  return [row, theme, ...linkRows(draft.links)];
+}
+export function linkForm(draft: Draft): ModalBuilder {
+  return form(`links:edit:${draft.id}`, 'Botões de URL', [{ id: 'links', label: 'Nome | https://endereço (um por linha)', max: 3000, required: false, paragraph: true,
+    placeholder: 'Discord | https://discord.gg/seu-convite', value: draft.links.map(link => `${link.label} | ${link.url}`).join('\n') }]);
 }

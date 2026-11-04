@@ -1,16 +1,17 @@
 import { randomUUID, createHash } from 'node:crypto';
 import type { APIEmbed, MessageCreateOptions } from 'discord.js';
-import { UserError, validateEmbeds } from '../validation/input.js';
+import { UserError, validateEmbeds, validateUrlButtons, type UrlButton } from '../validation/input.js';
+import { linkRows } from '../components/link-buttons.js';
 import type { Post } from '../templates/embeds.js';
 import type { Store } from './store.js';
-export interface Draft { id: string; ownerId: string; guildId: string; channelId: string; expiresAt: number; post?: Post; embeds: APIEmbed[]; busy: boolean; notifyEveryone: boolean }
+export interface Draft { id: string; ownerId: string; guildId: string; channelId: string; expiresAt: number; post?: Post; embeds: APIEmbed[]; links: UrlButton[]; busy: boolean; notifyEveryone: boolean }
 export class Drafts {
   private items = new Map<string, Draft>();
   constructor(private now = () => Date.now()) {}
-  create(input: Omit<Draft, 'id' | 'expiresAt' | 'busy' | 'notifyEveryone'>): Draft {
+  create(input: Omit<Draft, 'id' | 'expiresAt' | 'busy' | 'notifyEveryone' | 'links'> & { links?: UrlButton[] }): Draft {
     this.sweep();
     if (this.items.size >= 100 || [...this.items.values()].filter(d => d.ownerId === input.ownerId).length >= 5) throw new UserError('Limite de rascunhos. Cancele uma prévia ou aguarde 15 minutos.');
-    const draft = { ...input, id: randomUUID(), expiresAt: this.now() + 15 * 60_000, busy: false, notifyEveryone: false };
+    const draft = { ...input, links: validateUrlButtons(input.links ?? []), id: randomUUID(), expiresAt: this.now() + 15 * 60_000, busy: false, notifyEveryone: false };
     this.items.set(draft.id, draft); return draft;
   }
   get(id: string, ownerId: string, guildId: string): Draft {
@@ -26,11 +27,12 @@ export class Drafts {
 export function fingerprint(d: Draft): string {
   const embeds = d.embeds.map(({ timestamp: _timestamp, ...e }) => e);
   // Alterar a notificação não permite republicar o mesmo conteúdo dentro da janela de deduplicação.
-  return createHash('sha256').update(JSON.stringify([d.guildId, d.channelId, embeds])).digest('hex');
+  const links = validateUrlButtons(d.links);
+  return createHash('sha256').update(JSON.stringify(links.length ? [d.guildId, d.channelId, embeds, links] : [d.guildId, d.channelId, embeds])).digest('hex');
 }
 export function publicationOptions(draft: Draft, nonce: string): MessageCreateOptions {
   return {
-    embeds: draft.embeds, nonce, enforceNonce: true,
+    embeds: draft.embeds, components: linkRows(draft.links), nonce, enforceNonce: true,
     ...(draft.notifyEveryone ? { content: '@everyone' } : {}),
     allowedMentions: { parse: draft.notifyEveryone ? ['everyone'] : [], users: [], roles: [], repliedUser: false },
   };
@@ -38,6 +40,7 @@ export function publicationOptions(draft: Draft, nonce: string): MessageCreateOp
 export async function publish(draft: Draft, store: Store, send: (embeds: APIEmbed[], nonce: string) => Promise<{ id: string }>): Promise<string> {
   if (draft.busy) throw new UserError('Publicação em processamento.');
   validateEmbeds(draft.embeds);
+  validateUrlButtons(draft.links);
   draft.busy = true;
   const key = fingerprint(draft);
   let reserved = false;

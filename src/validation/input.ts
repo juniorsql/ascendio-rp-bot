@@ -10,16 +10,36 @@ export function snowflake(value: string, label = 'ID'): string {
   if (!/^[0-9]{17,20}$/.test(value)) throw new UserError(`${label} deve ser um ID válido do Discord.`);
   return value;
 }
-export function imageUrl(value: string): string {
+function publicHttpsUrl(value: string, label: string, max: number): string {
   if (!value.trim()) return '';
   let url: URL;
-  try { url = new URL(value.trim()); } catch { throw new UserError('Imagem: informe uma URL HTTPS válida.'); }
+  try { url = new URL(value.trim()); } catch { throw new UserError(`${label}: informe uma URL HTTPS válida.`); }
   const host = url.hostname.replace(/^\[|\]$/g, '');
-  if (url.protocol !== 'https:' || url.username || url.password || url.port || isIP(host) || !host.includes('.') || /(^|\.)(localhost|local|internal|test|invalid)$/.test(host) || url.href.length > 2048) {
-    throw new UserError('Imagem: use HTTPS em um domínio público, sem credenciais, IP ou porta personalizada.');
+  if (url.protocol !== 'https:' || url.username || url.password || url.port || isIP(host) || !host.includes('.') || /(^|\.)(localhost|local|internal|test|invalid)$/.test(host) || url.href.length > max) {
+    throw new UserError(`${label}: use HTTPS em um domínio público, sem credenciais, IP ou porta personalizada; máximo de ${max} caracteres.`);
   }
   // Não fazemos requisições ao endereço: o cliente do Discord renderiza a imagem.
   return url.href;
+}
+export function imageUrl(value: string): string { return publicHttpsUrl(value, 'Imagem', 2048); }
+export interface UrlButton { label: string; url: string }
+export function validateUrlButtons(buttons: UrlButton[]): UrlButton[] {
+  if (!Array.isArray(buttons) || buttons.length > 5) throw new UserError('Use no máximo 5 botões de URL.');
+  return buttons.map(button => {
+    const label = safeText(text(button.label, 80, 'Nome do botão'));
+    if (label.length > 80) throw new UserError('Nome do botão: máximo de 80 caracteres.');
+    const url = publicHttpsUrl(button.url, 'Botão', 512);
+    if (!url) throw new UserError('Botão: informe uma URL HTTPS.');
+    return { label, url };
+  });
+}
+export function urlButtons(value: string): UrlButton[] {
+  const lines = value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  return validateUrlButtons(lines.map(line => {
+    const parts = line.split('|').map(part => part.trim());
+    if (parts.length !== 2) throw new UserError('Botões: use Nome | https://endereço (um por linha).');
+    return { label: parts[0]!, url: parts[1]! };
+  }));
 }
 export function color(value: string): number {
   if (!/^#?[0-9a-f]{6}$/i.test(value)) throw new UserError('Cor: use um hexadecimal de seis dígitos, como #B49A61.');

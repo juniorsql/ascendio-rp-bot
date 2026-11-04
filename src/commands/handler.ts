@@ -1,13 +1,13 @@
 import { AttachmentBuilder, MessageFlags, PermissionFlagsBits, type Client, type Interaction, type ChatInputCommandInteraction, type ModalSubmitInteraction } from 'discord.js';
 import type { Env } from '../config/env.js';
 import { kinds, palette, type Kind } from '../config/defaults.js';
-import { controls, form, postForm } from '../components/forms.js';
+import { controls, form, postForm, linkForm } from '../components/forms.js';
 import { errorCode, log } from '../logs/logger.js';
 import { Drafts, publish, publicationOptions, type Draft } from '../services/drafts.js';
 import { authorized, target, assertEveryonePermissions } from '../services/discord.js';
 import type { Store } from '../services/store.js';
 import { postEmbed, rulesEmbeds, welcomeEmbed, type Post } from '../templates/embeds.js';
-import { color, fields, imageUrl, safeText, text, UserError } from '../validation/input.js';
+import { color, fields, imageUrl, safeText, text, urlButtons, UserError } from '../validation/input.js';
 import type { Tickets } from '../tickets/service.js';
 import { ticketInteraction } from '../tickets/handler.js';
 export interface Context { client: Client; env: Env; store: Store; drafts: Drafts; tickets?: Tickets }
@@ -44,7 +44,7 @@ async function changed(ctx: Context, userId: string, action: string, mutate: (co
 }
 function preview(d: Draft) {
   const notification = d.notifyEveryone ? '**@everyone ATIVADO:** ao clicar em Publicar, a mensagem mencionará todos no canal de destino.' : 'Notificação @everyone: desativada.';
-  return { content: `**PRÉVIA PRIVADA** • Destino: <#${d.channelId}>\n${notification}\nConfira o conteúdo antes de publicar. Expira em 15 minutos a partir da criação.`, embeds: d.embeds, components: controls(d), allowedMentions: none };
+  return { content: `**PRÉVIA PRIVADA** • Destino: <#${d.channelId}>\n${notification}\nBotões de URL: ${d.links.length}/5. Confira o conteúdo antes de publicar. Expira em 15 minutos a partir da criação.`, embeds: d.embeds, components: controls(d), allowedMentions: none };
 }
 async function configCommand(i: ChatInputCommandInteraction, ctx: Context) {
   const config = ctx.store.snapshot().config;
@@ -142,6 +142,18 @@ async function handle(i: Interaction, ctx: Context) {
   }
   if (i.isModalSubmit()) {
     if (i.customId.startsWith('cfg:')) return configModal(i, ctx);
+    if (i.customId.startsWith('links:edit:')) {
+      const draft = ctx.drafts.get(i.customId.slice('links:edit:'.length), i.user.id, ctx.env.guildId);
+      const links = urlButtons(i.fields.getTextInputValue('links'));
+      draft.busy = true;
+      try {
+        if (i.isFromMessage()) await i.deferUpdate(); else await i.deferReply({ flags: MessageFlags.Ephemeral });
+        await destination(i, ctx, draft.channelId);
+        const reply = await i.editReply(preview({ ...draft, links }));
+        draft.links = links;
+        return reply;
+      } finally { draft.busy = false; }
+    }
     const [prefix, action, key, channel] = i.customId.split(':');
     if (prefix !== 'post' || !['new', 'edit'].includes(action ?? '')) throw new UserError('Formulário desconhecido.');
     if (i.isFromMessage()) await i.deferUpdate(); else await i.deferReply({ flags: MessageFlags.Ephemeral });
@@ -159,6 +171,7 @@ async function handle(i: Interaction, ctx: Context) {
   }
   const [action, id] = i.customId.split(':');
   const draft = ctx.drafts.get(id!, i.user.id, ctx.env.guildId);
+  if (i.isButton() && action === 'links') return i.showModal(linkForm(draft));
   if (i.isButton() && action === 'edit') return i.showModal(postForm(`post:edit:${draft.id}`, draft));
   if (i.isButton() && action === 'notify') {
     draft.busy = true;
