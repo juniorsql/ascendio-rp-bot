@@ -1,14 +1,15 @@
 import { ContainerBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder, SectionBuilder, SeparatorBuilder, TextDisplayBuilder, ThumbnailBuilder, type APIEmbed } from 'discord.js';
-import { imageUrl, safeText, UserError, validateEmbeds } from '../validation/input.js';
+import { imageUrl, safeText, text, UserError, validateEmbeds } from '../validation/input.js';
 
-export function publicationCard(embeds: APIEmbed[], imagePosition: 'top' | 'bottom', surroundingText = '') {
+export function publicationCard(embeds: APIEmbed[], imagePosition: 'top' | 'bottom', surroundingText = '', closingText = '') {
   if (embeds.length !== 1) throw new UserError('Escolha a posição da imagem em uma publicação individual.');
   validateEmbeds(embeds);
   const embed = embeds[0]!;
   const title = embed.title ? `## ${safeText(embed.title).replace(/\r?\n/g, ' ')}` : '';
   const body = [embed.description ? safeText(embed.description) : '', ...(embed.fields ?? []).map(f => `**${safeText(f.name)}**\n${safeText(f.value)}`)].filter(Boolean).join('\n\n');
+  const closing = safeText(text(closingText, 1500, 'Texto final', 0));
   if (!title && !body) throw new UserError('A publicação precisa de título ou conteúdo.');
-  if (title.length + body.length + surroundingText.length > 4000) throw new UserError('Imagem no topo: título, conteúdo e campos precisam caber em 4000 caracteres, incluindo a prévia. Reduza o texto para usar esse layout.');
+  if (title.length + body.length + closing.length + surroundingText.length > 4000) throw new UserError('Card: título, conteúdo, campos e texto final precisam caber em 4000 caracteres, incluindo a prévia. Reduza o texto para usar esse layout.');
   const card = new ContainerBuilder().setAccentColor(embed.color ?? 0xb49a61);
   const addImage = () => { if (embed.image?.url) card.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(imageUrl(embed.image.url)))); };
   if (imagePosition === 'top') addImage();
@@ -19,6 +20,7 @@ export function publicationCard(embeds: APIEmbed[], imagePosition: 'top' | 'bott
   }
   if (title && body) card.addSeparatorComponents(new SeparatorBuilder().setDivider(true));
   if (body) card.addTextDisplayComponents(new TextDisplayBuilder().setContent(body));
+  if (closing) card.addSeparatorComponents(new SeparatorBuilder().setDivider(true)).addTextDisplayComponents(new TextDisplayBuilder().setContent(closing));
   if (imagePosition === 'bottom') addImage();
   return card;
 }

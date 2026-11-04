@@ -36,7 +36,12 @@ export function controls(draft: Draft) {
   const imagePosition = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId(`layout:${draft.id}`).setPlaceholder('Posição da imagem')
     .addOptions({ label: 'Imagem no topo', value: 'top', description: 'Banner acima do título e do texto', default: draft.post.imagePosition === 'top' },
       { label: 'Imagem embaixo', value: 'bottom', description: 'Imagem após o texto', default: draft.post.imagePosition !== 'top' }));
-  return [row, theme, imagePosition, ...linkRows(draft.links)];
+  const closing = new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`closing:${draft.id}`).setLabel(draft.post.closingText ? 'Editar separador final' : 'Separador final').setStyle(ButtonStyle.Secondary));
+  return [row, theme, imagePosition, closing, ...linkRows(draft.links)];
+}
+export function closingForm(draft: Draft): ModalBuilder {
+  return form(`closing:edit:${draft.id}`, 'Separador final', [{ id: 'closing', label: 'Texto após a linha (vazio remove)', max: 1500, required: false, paragraph: true,
+    placeholder: 'Escreva aqui o trecho de encerramento da publicação.', value: draft.post?.closingText }]);
 }
 export function linkForm(draft: Draft): ModalBuilder {
   return form(`links:edit:${draft.id}`, 'Botões de URL', [{ id: 'links', label: 'Nome | https://endereço (um por linha)', max: 3000, required: false, paragraph: true,

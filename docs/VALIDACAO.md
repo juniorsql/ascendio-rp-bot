@@ -8,7 +8,7 @@ Data: **23/10/2026**, horário de referência America/Sao_Paulo.
 | --- | --- |
 | Instalação das dependências pelo npm | Concluída; lockfile criado |
 | TypeScript estrito, incluindo fontes e testes | Passou |
-| Testes automatizados, incluindo posição da imagem, botões de URL, cargo de entrada e tickets | **100 passaram, 0 falharam** |
+| Testes automatizados, incluindo separador final, posição da imagem, URLs, cargo de entrada e tickets | **106 passaram, 0 falharam** |
 | Compilação para `dist/` | Passou |
 | Testes executados diretamente com Node 24.22.1 | 28 passaram |
 | Criação e destruição de cliente Discord sem login, heap V8 de 128 MB | Passou; RSS observado de aproximadamente **76 MB** |
@@ -114,3 +114,8 @@ Use [ACEITE.md](ACEITE.md) para concluir e registrar a homologação operacional
 
 - Oito testes adicionais: ordem banner/título/separador/corpo, miniatura e campos, payload V2 sem content/embeds, menções explícitas somente ao publicar, posição na deduplicação, orçamento de texto anterior à reserva, conversão da prévia, preservação de cor/conteúdo/links, retorno para baixo, conclusão/cancelamento compatíveis e falha da prévia sem alteração silenciosa.
 - TypeScript estrito, 100 testes e compilação passaram. O fluxo de interação é simulado; nenhum anúncio público foi criado ou modificado automaticamente para testar o layout. A aceitação visual com a conta humana permanece no fluxo normal de prévia e confirmação.
+
+## Separador final — 04/11/2026
+
+- Seis testes adicionais: ordem da linha antes do texto final, remoção do trecho sem assinatura automática, neutralização de menções, encerramento na deduplicação e no orçamento de texto, composição/edição/cor/links preservados, falha da prévia sem alteração silenciosa e bloqueio de confirmação concorrente. Os controles também são verificados dentro do limite de cinco linhas do formato anterior.
+- TypeScript estrito, 106 testes e compilação passaram. Os fluxos são simulados, sem publicar anúncios automáticos no servidor.

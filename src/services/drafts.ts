@@ -12,7 +12,7 @@ export class Drafts {
   create(input: Omit<Draft, 'id' | 'expiresAt' | 'busy' | 'notifyEveryone' | 'links' | 'layoutV2'> & { links?: UrlButton[] }): Draft {
     this.sweep();
     if (this.items.size >= 100 || [...this.items.values()].filter(d => d.ownerId === input.ownerId).length >= 5) throw new UserError('Limite de rascunhos. Cancele uma prévia ou aguarde 15 minutos.');
-    const draft = { ...input, links: validateUrlButtons(input.links ?? []), layoutV2: input.post?.imagePosition === 'top', id: randomUUID(), expiresAt: this.now() + 15 * 60_000, busy: false, notifyEveryone: false };
+    const draft = { ...input, links: validateUrlButtons(input.links ?? []), layoutV2: input.post?.imagePosition === 'top' || !!input.post?.closingText?.trim(), id: randomUUID(), expiresAt: this.now() + 15 * 60_000, busy: false, notifyEveryone: false };
     this.items.set(draft.id, draft); return draft;
   }
   get(id: string, ownerId: string, guildId: string): Draft {
@@ -30,13 +30,13 @@ export function fingerprint(d: Draft): string {
   // Alterar a notificação não permite republicar o mesmo conteúdo dentro da janela de deduplicação.
   const links = validateUrlButtons(d.links);
   const parts: unknown[] = links.length ? [d.guildId, d.channelId, embeds, links] : [d.guildId, d.channelId, embeds];
-  if (d.layoutV2) parts.push({ layout: 'card', imagePosition: d.post?.imagePosition ?? 'bottom' });
+  if (d.layoutV2) parts.push({ layout: 'card', imagePosition: d.post?.imagePosition ?? 'bottom', ...(d.post?.closingText ? { closingText: d.post.closingText } : {}) });
   return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 }
 export function publicationOptions(draft: Draft, nonce: string): MessageCreateOptions {
   if (draft.layoutV2) return {
     flags: MessageFlags.IsComponentsV2,
-    components: [...(draft.notifyEveryone ? [new TextDisplayBuilder().setContent('@everyone')] : []), publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : ''), ...linkRows(draft.links)],
+    components: [...(draft.notifyEveryone ? [new TextDisplayBuilder().setContent('@everyone')] : []), publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : '', draft.post?.closingText), ...linkRows(draft.links)],
     nonce, enforceNonce: true,
     allowedMentions: { parse: draft.notifyEveryone ? ['everyone'] : [], users: [], roles: [], repliedUser: false },
   };
@@ -50,7 +50,7 @@ export async function publish(draft: Draft, store: Store, send: (embeds: APIEmbe
   if (draft.busy) throw new UserError('Publicação em processamento.');
   validateEmbeds(draft.embeds);
   validateUrlButtons(draft.links);
-  if (draft.layoutV2) publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : '');
+  if (draft.layoutV2) publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : '', draft.post?.closingText);
   draft.busy = true;
   const key = fingerprint(draft);
   let reserved = false;

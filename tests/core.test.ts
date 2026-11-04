@@ -140,7 +140,30 @@ test('comandos e componentes serializam sem credenciais e respeitam o escopo de 
   assert.equal(commands.length, 9); assert.equal(new Set(commands.map(c => c.name)).size, 9);
   const d = makeDraft(); assert.ok(controls(d)[0]!.toJSON().components.length >= 2);
   assert.equal(postForm('post:new:comunicado:123456789012345678').toJSON().components.length, 5);
+  const composed = { ...d, post: { kind: 'comunicado' as const, title: 'Teste', description: 'Texto', image: '', thumbnail: '', fields: [] }, links: urlButtons('Site | https://example.com') };
+  assert.equal(controls(composed).length, 5);
+  assert.ok(controls(composed).every(row => row.toJSON().components.length <= 5));
   for (const c of commands) { assert.deepEqual(c.contexts, [0]); if (!['ajuda', 'atendimentos'].includes(c.name)) assert.ok(c.default_member_permissions); }
+});
+
+test('separador final aparece antes do encerramento personalizado e não inclui assinatura automática', () => {
+  const embed = { title: 'Bem-vindos', description: 'Conteúdo principal.', image: { url: 'https://example.com/banner.png' } };
+  const card = publicationCard([embed], 'top', '', '✨ Nosso próximo capítulo. @everyone').toJSON() as any;
+  assert.deepEqual(card.components.map((c: any) => c.type), [12,10,14,10,14,10]);
+  assert.equal(card.components[4].divider, true);
+  assert.match(card.components[5].content, /Nosso próximo capítulo/);
+  assert.ok(!card.components[5].content.includes('@everyone'));
+  assert.equal(publicationCard([embed], 'top').toJSON().components.length, 4);
+  assert.equal(publicationCard([embed], 'bottom', '', 'Final.').toJSON().components.at(-1)!.type, 12);
+  assert.throws(() => publicationCard([embed], 'top', '', 'a'.repeat(1501)), /1500/);
+});
+
+test('texto final faz parte da deduplicação e respeita o orçamento de texto do card', () => {
+  const a = makeDraft();
+  a.layoutV2 = true; a.post = { kind: 'comunicado', title: 'Bem-vindos', description: 'Corpo', image: '', thumbnail: '', fields: [], closingText: 'Final A' };
+  const b = { ...a, post: { ...a.post, closingText: 'Final B' } };
+  assert.notEqual(fingerprint(a), fingerprint(b));
+  assert.throws(() => publicationCard([{ title: 'Teste', description: 'a'.repeat(3000) }], 'top', '', 'b'.repeat(1100)), /4000/);
 });
 test('rascunhos validam titularidade, expiração, concorrência e limite por autor', () => {
   let now = 0; const drafts = new Drafts(() => now); const d = makeDraft(drafts);

@@ -1,7 +1,7 @@
 import { AttachmentBuilder, MessageFlags, PermissionFlagsBits, TextDisplayBuilder, type Client, type Interaction, type ChatInputCommandInteraction, type ModalSubmitInteraction } from 'discord.js';
 import type { Env } from '../config/env.js';
 import { kinds, palette, type Kind } from '../config/defaults.js';
-import { controls, form, postForm, linkForm } from '../components/forms.js';
+import { controls, form, postForm, linkForm, closingForm } from '../components/forms.js';
 import { errorCode, log } from '../logs/logger.js';
 import { Drafts, publish, publicationOptions, type Draft } from '../services/drafts.js';
 import { authorized, target, assertEveryonePermissions } from '../services/discord.js';
@@ -46,7 +46,7 @@ async function changed(ctx: Context, userId: string, action: string, mutate: (co
 function preview(d: Draft) {
   const notification = d.notifyEveryone ? '**@everyone ATIVADO:** ao clicar em Publicar, a mensagem mencionará todos no canal de destino.' : 'Notificação @everyone: desativada.';
   const content = `**PRÉVIA PRIVADA** • Destino: <#${d.channelId}>\n${notification}\nBotões de URL: ${d.links.length}/5. Confira o conteúdo antes de publicar. Expira em 15 minutos a partir da criação.`;
-  if (d.layoutV2) return { content: null, embeds: [], flags: MessageFlags.IsComponentsV2 as const, components: [new TextDisplayBuilder().setContent(content), publicationCard(d.embeds, d.post?.imagePosition ?? 'bottom', content), ...controls(d)], allowedMentions: none };
+  if (d.layoutV2) return { content: null, embeds: [], flags: MessageFlags.IsComponentsV2 as const, components: [new TextDisplayBuilder().setContent(content), publicationCard(d.embeds, d.post?.imagePosition ?? 'bottom', content, d.post?.closingText), ...controls(d)], allowedMentions: none };
   return { content, embeds: d.embeds, components: controls(d), allowedMentions: none };
 }
 function completedPreview(d: Draft, content: string) {
@@ -149,6 +149,20 @@ async function handle(i: Interaction, ctx: Context) {
   }
   if (i.isModalSubmit()) {
     if (i.customId.startsWith('cfg:')) return configModal(i, ctx);
+    if (i.customId.startsWith('closing:edit:')) {
+      const draft = ctx.drafts.get(i.customId.slice('closing:edit:'.length), i.user.id, ctx.env.guildId);
+      if (!draft.post) throw new UserError('O separador final está disponível nas publicações personalizadas.');
+      const closingText = text(i.fields.getTextInputValue('closing'), 1500, 'Texto final', 0);
+      const updated: Draft = { ...draft, layoutV2: draft.layoutV2 || !!closingText, post: { ...draft.post, closingText } };
+      draft.busy = true;
+      try {
+        if (i.isFromMessage()) await i.deferUpdate(); else await i.deferReply({ flags: MessageFlags.Ephemeral });
+        await destination(i, ctx, draft.channelId);
+        const reply = await i.editReply(preview(updated));
+        draft.layoutV2 = updated.layoutV2; draft.post = updated.post;
+        return reply;
+      } finally { draft.busy = false; }
+    }
     if (i.customId.startsWith('links:edit:')) {
       const draft = ctx.drafts.get(i.customId.slice('links:edit:'.length), i.user.id, ctx.env.guildId);
       const links = urlButtons(i.fields.getTextInputValue('links'));
@@ -169,7 +183,7 @@ async function handle(i: Interaction, ctx: Context) {
     await destination(i, ctx, channelId);
     const post: Post = { kind: old?.post?.kind ?? kindOf(key!), title: text(i.fields.getTextInputValue('title'), 256, 'Título'),
       description: text(i.fields.getTextInputValue('description'), 4000, 'Conteúdo'), image: imageUrl(i.fields.getTextInputValue('image')),
-      thumbnail: imageUrl(i.fields.getTextInputValue('thumbnail')), fields: fields(i.fields.getTextInputValue('fields')), ...(old?.post?.color !== undefined ? { color: old.post.color } : {}), ...(old?.post?.imagePosition ? { imagePosition: old.post.imagePosition } : {}) };
+      thumbnail: imageUrl(i.fields.getTextInputValue('thumbnail')), fields: fields(i.fields.getTextInputValue('fields')), ...(old?.post?.color !== undefined ? { color: old.post.color } : {}), ...(old?.post?.imagePosition ? { imagePosition: old.post.imagePosition } : {}), ...(old?.post?.closingText !== undefined ? { closingText: old.post.closingText } : {}) };
     const embeds = postEmbed(post, ctx.store.snapshot().config);
     if (old) ctx.drafts.get(old.id, i.user.id, ctx.env.guildId);
     const draft = old ?? ctx.drafts.create({ ownerId: i.user.id, guildId: ctx.env.guildId, channelId, post, embeds });
@@ -180,6 +194,7 @@ async function handle(i: Interaction, ctx: Context) {
   }
   const [action, id] = i.customId.split(':');
   const draft = ctx.drafts.get(id!, i.user.id, ctx.env.guildId);
+  if (i.isButton() && action === 'closing' && draft.post) return i.showModal(closingForm(draft));
   if (i.isButton() && action === 'links') return i.showModal(linkForm(draft));
   if (i.isButton() && action === 'edit') return i.showModal(postForm(`post:edit:${draft.id}`, draft));
   if (i.isButton() && action === 'notify') {

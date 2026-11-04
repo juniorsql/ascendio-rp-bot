@@ -22,6 +22,8 @@ A versão **1.3.5** permite até cinco **botões de URL** por publicação. Eles
 
 A versão **1.3.6** acrescenta o menu **Posição da imagem** na prévia: **Imagem no topo** mostra o banner antes do título e do conteúdo; **Imagem embaixo** coloca a imagem depois do texto. A escolha é por publicação e começa embaixo, mantendo o formato anterior até a equipe selecionar o topo.
 
+A versão **1.3.7** adiciona **Separador final** às publicações personalizadas. Esse botão abre um campo opcional para o trecho de encerramento, exibido após uma linha horizontal dentro do card. Não usa uma assinatura automática da comunidade.
+
 **Estado da entrega:** implementação, verificações locais, publicação no GitHub, autenticação real, registro dos comandos e deploy gratuito executados. O acesso aos canais privados de boas-vindas e logs foi confirmado; o aceite final do fluxo com membros reais e publicações pela equipe permanece em aberto. O token não faz parte do repositório. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para as verificações e pendências.
 
 ## 1. Requisitos e versões
@@ -155,6 +157,8 @@ Use até cinco linhas, com nome de até 80 caracteres e URL HTTPS pública de at
 Para usar um banner, preencha **Imagem principal (HTTPS)** no formulário e, na prévia, abra o menu inicialmente marcado **Imagem embaixo** e escolha **Imagem no topo**. O resultado aparece antes de publicar, mantendo cor, miniatura, conteúdo, campos e links. Essa opção usa Components V2 para montar imagem, título, separador e texto dentro do mesmo card; os botões de URL continuam abaixo dele. A prévia não menciona ninguém. `@everyone` continua exigindo ativação explícita e permissão atual no destino.
 
 Nesse layout, os textos do card e da prévia precisam caber no limite total de 4000 caracteres do Discord. O bot recusa textos que ultrapassem esse limite, sem truncar nem publicar. Após selecionar topo, voltar para baixo mantém o card em Components V2, pois o Discord não permite remover esse formato de uma mensagem já convertida. Cancelar e concluir usam uma resposta compatível com esse formato. Publicações antigas não são modificadas automaticamente.
+
+Para separar o encerramento, clique em **Separador final** na prévia e escreva o texto que ficará depois da linha. O campo aceita até 1500 caracteres e pode conter mais de um parágrafo. Deixe vazio para remover o trecho e a linha adicional. O card completo, incluindo esse texto e a prévia, continua sujeito aos 4000 caracteres. Cor, posição da imagem e links são preservados ao editar o trecho final; editar o formulário principal não apaga o encerramento. O separador ativa Components V2 mesmo com a imagem embaixo.
 
 ### Notificar com @everyone
 

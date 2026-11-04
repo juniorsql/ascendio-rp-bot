@@ -171,6 +171,61 @@ test('texto grande e posição inválida são recusados sem truncar o conteúdo 
   for (const value of ['top','outro']) await onInteraction(f.interaction('select', { customId: `layout:${d.id}`, values: [value] }), f.ctx);
   assert.equal(d.layoutV2, false); assert.equal(d.post!.description.length, 4000); assert.equal(d.post!.imagePosition, undefined); assert.equal(f.sent.length, 0);
 });
+
+test('separador final é configurado na prévia e preservado ao editar conteúdo/cor e publicar links', async t => {
+  const f = await setup(t), post = { kind: 'comunicado' as const, title: 'Bem-vindos', description: 'Comunidade.', image: 'https://example.com/banner.png', thumbnail: '', fields: [], imagePosition: 'top' as const };
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config), links: [{ label: 'Discord', url: 'https://discord.gg/exemplo' }] });
+  await onInteraction(f.interaction('button', { customId: `closing:${d.id}` }), f.ctx);
+  assert.equal(f.replies.at(-1).custom_id, `closing:edit:${d.id}`);
+  await onInteraction(f.interaction('modal', { customId: `closing:edit:${d.id}`, isFromMessage: () => true, fields: { getTextInputValue: () => '✨ Um novo capítulo espera por você.' } }), f.ctx);
+  assert.equal(f.sent.length, 0); assert.equal(d.layoutV2, true);
+  const card = f.replies.at(-1).components[1].toJSON();
+  assert.equal(card.components.at(-2).type, 14); assert.match(card.components.at(-1).content, /novo capítulo/);
+  assert.deepEqual(f.replies.at(-1).allowedMentions.parse, []);
+  const input: Record<string,string> = { title: post.title, description: 'Texto editado.', image: post.image, thumbnail: '', fields: '' };
+  await onInteraction(f.interaction('modal', { customId: `post:edit:${d.id}`, isFromMessage: () => true, fields: { getTextInputValue: (key: string) => input[key] } }), f.ctx);
+  await onInteraction(f.interaction('select', { customId: `theme:${d.id}`, values: [String(0x202f4b)] }), f.ctx);
+  assert.match(d.post!.closingText!, /novo capítulo/);
+  await onInteraction(f.interaction('button', { customId: `confirm:${d.id}` }), f.ctx);
+  assert.equal(f.sent.length, 1);
+  const published = f.sent[0].components[0].toJSON();
+  assert.equal(published.accent_color, 0x202f4b); assert.equal(published.components.at(-2).type, 14);
+  assert.equal(published.components.at(-1).content, d.post!.closingText);
+  assert.equal(f.sent[0].components.at(-1).toJSON().components[0].url, 'https://discord.gg/exemplo');
+});
+
+test('texto final vazio remove linha adicional e mantém formato compatível', async t => {
+  const f = await setup(t), post = { kind: 'comunicado' as const, title: 'Teste', description: 'Descrição.', image: '', thumbnail: '', fields: [], closingText: 'Final.' };
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config) });
+  await onInteraction(f.interaction('button', { customId: `closing:${d.id}` }), f.ctx);
+  assert.equal(f.replies.at(-1).components[0].components[0].value, 'Final.');
+  await onInteraction(f.interaction('modal', { customId: `closing:edit:${d.id}`, isFromMessage: () => true, fields: { getTextInputValue: () => '  ' } }), f.ctx);
+  assert.equal(d.post!.closingText, ''); assert.equal(d.layoutV2, true);
+  assert.deepEqual(f.replies.at(-1).components[1].toJSON().components.map((c: any) => c.type), [10,14,10]);
+  assert.equal(f.sent.length, 0);
+});
+
+test('final inválido ou falha de atualização preservam texto anterior e não publicam', async t => {
+  const f = await setup(t), post = { kind: 'comunicado' as const, title: 'Teste', description: 'Descrição.', image: '', thumbnail: '', fields: [], closingText: 'Anterior.' };
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config) });
+  await onInteraction(f.interaction('modal', { customId: `closing:edit:${d.id}`, fields: { getTextInputValue: () => 'a'.repeat(1501) } }), f.ctx);
+  assert.equal(d.post!.closingText, 'Anterior.'); assert.equal(d.busy, false);
+  await onInteraction(f.interaction('modal', { customId: `closing:edit:${d.id}`, isFromMessage: () => true, fields: { getTextInputValue: () => 'Novo.' }, editReply: async () => { throw new Error('Preview unavailable'); } }), f.ctx);
+  assert.equal(d.post!.closingText, 'Anterior.'); assert.equal(d.busy, false); assert.equal(f.sent.length, 0);
+});
+
+test('edição do separador bloqueia publicação concorrente', async t => {
+  const f = await setup(t), post = { kind: 'comunicado' as const, title: 'Teste', description: 'Descrição.', image: '', thumbnail: '', fields: [] };
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config) });
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; }), started = new Promise<void>(resolve => { entered = resolve; });
+  const pending = onInteraction(f.interaction('modal', { customId: `closing:edit:${d.id}`, isFromMessage: () => true, fields: { getTextInputValue: () => 'Final.' }, deferUpdate: async () => { entered(); await gate; } }), f.ctx);
+  await started;
+  await onInteraction(f.interaction('button', { customId: `confirm:${d.id}` }), f.ctx);
+  assert.equal(f.sent.length, 0); assert.match(f.replies.at(-1).content, /processada/);
+  release(); await pending;
+  assert.equal(d.post!.closingText, 'Final.'); assert.equal(d.busy, false);
+});
 test('usuário comum não abre modal e perda de permissão antes de confirmar bloqueia envio', async t => {
   const f = await setup(t); f.setPermissions(0n);
   await onInteraction(f.interaction('command', { commandName: 'evento' }), f.ctx);
