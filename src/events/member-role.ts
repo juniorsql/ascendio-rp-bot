@@ -16,10 +16,6 @@ const recovering = new WeakSet<Context['client']>();
 export async function assignJoinRole(member: GuildMember, ctx: Context): Promise<boolean> {
   const roleId = ctx.env.joinRoleId;
   if (!roleId || member.guild.id !== ctx.env.guildId || member.user.bot || member.roles.cache.has(roleId)) return false;
-  if (member.pending === true) {
-    log('join_role_waiting_screening', { userId: member.id, guildId: member.guild.id, roleId });
-    return false;
-  }
   const key = `${member.guild.id}:${member.id}:${roleId}`;
   if (assigning.has(key)) return false;
   assigning.add(key);
@@ -47,7 +43,7 @@ function recoverable(member: GuildMember, ctx: Context, now: number): boolean {
 }
 
 export async function recoverJoinRoles(ctx: Context, now = Date.now()) {
-  const result = { checked: 0, assigned: 0, waitingScreening: 0, truncated: false };
+  const result = { checked: 0, assigned: 0, pendingAtScan: 0, truncated: false };
   if (!ctx.env.joinRoleId || recovering.has(ctx.client)) return result;
   recovering.add(ctx.client);
   try {
@@ -60,10 +56,10 @@ export async function recoverJoinRoles(ctx: Context, now = Date.now()) {
       for (const member of page.values()) {
         result.checked++;
         if (!recoverable(member, ctx, now)) continue;
-        if (member.pending === true) { result.waitingScreening++; continue; }
+        if (member.pending === true) result.pendingAtScan++;
         // Consulta novamente antes do PUT: alguém pode ter aprovado o membro durante a varredura.
         const fresh = await guild.members.fetch({ user: member.id, force: true, cache: false });
-        if (!recoverable(fresh, ctx, now) || fresh.pending === true) continue;
+        if (!recoverable(fresh, ctx, now)) continue;
         if (await assignJoinRole(fresh, ctx)) result.assigned++;
         if (result.assigned >= 25) { result.truncated = true; break; }
       }
@@ -71,7 +67,7 @@ export async function recoverJoinRoles(ctx: Context, now = Date.now()) {
       after = page.last()!.id;
       if (pageNumber === 19) result.truncated = true;
     }
-    log('join_role_recovery', { guildId: ctx.env.guildId, roleId: ctx.env.joinRoleId, action: `checked=${result.checked};assigned=${result.assigned};waiting=${result.waitingScreening};truncated=${result.truncated}` });
+    log('join_role_recovery', { guildId: ctx.env.guildId, roleId: ctx.env.joinRoleId, action: `checked=${result.checked};assigned=${result.assigned};pending=${result.pendingAtScan};truncated=${result.truncated}` });
     return result;
   } finally { recovering.delete(ctx.client); }
 }

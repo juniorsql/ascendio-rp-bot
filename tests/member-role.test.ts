@@ -60,16 +60,16 @@ test('variável JOIN_ROLE_ID é opcional e valida ID de cargo', () => {
   assert.throws(() => loadEnv({ ...env, JOIN_ROLE_ID: 'Convidado' }), /ID válido/);
 });
 
-test('entrada pendente aguarda triagem e conclusão atribui cargo sem repetir boas-vindas', async () => {
+test('entrada recebe cargo imediatamente mesmo pendente e atualização não repete cargo ou boas-vindas', async () => {
   const f = fixture(); f.config.welcomeChannelId = channelId;
   f.member.pending = true;
   await onMemberAdd(f.member, f.ctx);
-  assert.deepEqual(f.actions, ['welcome']);
+  assert.deepEqual(f.actions, ['role', 'welcome']);
   const before = { ...f.member, pending: true } as GuildMember;
   f.member.pending = false;
   await onMemberScreened(before, f.member, f.ctx);
   await onMemberScreened(before, f.member, f.ctx);
-  assert.deepEqual(f.actions, ['welcome', 'role']);
+  assert.deepEqual(f.actions, ['role', 'welcome']);
   assert.equal(f.held.has(otherRoleId), true);
 });
 
@@ -95,7 +95,7 @@ function recoveryFixture() {
   return { ...f, make, members, now, setFail: (v: boolean) => { fail = v; } };
 }
 
-test('recuperação atribui somente a recentes sem cargo e preserva antigos, equipe, bots e triagem', async () => {
+test('recuperação inclui entrada pendente sem cargo e preserva antigos, equipe e bots', async () => {
   const f = recoveryFixture();
   const recent = f.make('100000000000000001');
   f.make('100000000000000002', { age: 8 * 86400_000 });
@@ -105,10 +105,10 @@ test('recuperação atribui somente a recentes sem cargo e preserva antigos, equ
   f.make('100000000000000006', { roles: [roleId] });
   f.make('100000000000000007', { age: -1000 });
   const result = await recoverJoinRoles(f.ctx, f.now);
-  assert.deepEqual(result, { checked: 7, assigned: 1, waitingScreening: 1, truncated: false });
-  assert.deepEqual(f.actions, [recent.id]);
+  assert.deepEqual(result, { checked: 7, assigned: 2, pendingAtScan: 1, truncated: false });
+  assert.deepEqual(f.actions, [recent.id, '100000000000000005']);
   await recoverJoinRoles(f.ctx, f.now);
-  assert.deepEqual(f.actions, [recent.id]);
+  assert.deepEqual(f.actions, [recent.id, '100000000000000005']);
 });
 
 test('falha temporária de atribuição é retomada na próxima conferência sem perda de cargos', async () => {
