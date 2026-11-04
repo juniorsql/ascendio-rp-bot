@@ -14,6 +14,10 @@ Na versão **1.3.2**, cada novo atendimento envia um aviso privado em `avisos-<s
 
 Na versão **1.3.3**, o Ascendios RP volta aos **canais individuais** por escolha do responsável. Novos tickets mencionam os responsáveis dentro do próprio canal; Doações menciona somente o proprietário. Encerrados ficam somente para leitura em Tickets Fechados, com link no registro. Tópicos e históricos existentes são preservados. `/ticket tradicional` restaura esse modo.
 
+Na versão **1.3.4**, o cargo de entrada atual é **Candidato a Hogwarts**. O bot aguarda a conclusão da verificação de entrada do Discord (`pending=false`) antes de atribuí-lo e recebe essa conclusão por `GuildMemberUpdate`, sem repetir as boas-vindas. Na inicialização e a cada cinco minutos, confere também entradas dos últimos sete dias que estejam sem nenhum cargo além de @everyone, cobrindo entradas enquanto estava desligado e falhas temporárias de atribuição. Pessoas com cargos de aprovação, equipe ou outros cargos não recebem atribuição retroativa por essa conferência.
+
+A recuperação usa páginas REST de até 200 membros com cache desativado, no máximo 20 páginas e 25 atribuições por execução; o restante fica para a próxima rodada. Reconfere o membro antes de atribuir, preserva os outros cargos e não remove cargos. Registros `join_role_waiting_screening`, `join_role_assigned` e `join_role_recovery` permitem acompanhar o resultado sem armazenar conversas. A verificação de entrada e o cargo funcionam independentemente da configuração de tickets.
+
 **Estado da entrega:** implementação, verificações locais, publicação no GitHub, autenticação real, registro dos comandos e deploy gratuito executados. O acesso aos canais privados de boas-vindas e logs foi confirmado; o aceite final do fluxo com membros reais e publicações pela equipe permanece em aberto. O token não faz parte do repositório. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para as verificações e pendências.
 
 ## 1. Requisitos e versões

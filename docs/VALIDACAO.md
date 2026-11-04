@@ -8,7 +8,7 @@ Data: **23/10/2026**, horário de referência America/Sao_Paulo.
 | --- | --- |
 | Instalação das dependências pelo npm | Concluída; lockfile criado |
 | TypeScript estrito, incluindo fontes e testes | Passou |
-| Testes automatizados, incluindo publicações, cargo de entrada, setores ocultos, avisos e restauração de canais | **78 passaram, 0 falharam** |
+| Testes automatizados, incluindo publicações, recuperação do cargo de entrada, setores ocultos, avisos e restauração de canais | **85 passaram, 0 falharam** |
 | Compilação para `dist/` | Passou |
 | Testes executados diretamente com Node 24.22.1 | 28 passaram |
 | Criação e destruição de cliente Discord sem login, heap V8 de 128 MB | Passou; RSS observado de aproximadamente **76 MB** |
@@ -97,3 +97,9 @@ Use [ACEITE.md](ACEITE.md) para concluir e registrar a homologação operacional
 - Doações testa menção somente ao usuário autorizado, sem ping de cargo ou @everyone. Destinatário sem cargo é bloqueado; permissões adulteradas no canal impedem envio do aviso.
 - A restauração não exclui canais, tópicos, mensagens ou registros antigos. Os testes existentes continuam cobrindo categoria com 50 canais, falha no registro, isolamento de acesso e recuperação de aberturas incertas.
 - Teste real autenticado em Doações: criou um canal privado individual, mencionou somente o proprietário, persistiu a confirmação do aviso, encerrou somente para leitura, moveu para Tickets Fechados e enviou registro com link. O canal de teste foi preservado, sem exclusão. Todos os canais anteriores permaneceram presentes. O teste invoca os serviços internos; a interação humana no painel continua sujeita ao aceite.
+
+## Cargo de entrada após indisponibilidade — 04/11/2026
+
+- Auditoria REST real: cargo Candidato a Hogwarts configurado na hospedagem, permissão Gerenciar cargos, hierarquia superior e Guild Members Intent confirmados. Entre 65 membros, uma pessoa recente estava sem cargo e com triagem pendente; outra entrada recente já tinha cargos de equipe e foi excluída da recuperação.
+- Sete testes adicionais: deferimento durante triagem, conclusão sem repetir boas-vindas, atualização de apelido/cargo sem nova entrada, recuperação somente de recentes sem cargos, repetição após falha temporária, proteção contra aprovação durante a varredura, conclusão com cache parcial, paginação sem cache, limite de atribuições e varreduras concorrentes.
+- TypeScript estrito, 85 testes e compilação passaram. Nenhuma entrada de usuário real foi simulada e a verificação pendente não foi aprovada pelo bot.

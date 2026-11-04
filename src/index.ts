@@ -4,7 +4,7 @@ import { Store } from './services/store.js';
 import { Drafts } from './services/drafts.js';
 import { onInteraction } from './commands/handler.js';
 import { onMemberAdd } from './events/welcome.js';
-import { joinRole } from './events/member-role.js';
+import { joinRole, onMemberScreened, recoverJoinRoles } from './events/member-role.js';
 import { register } from './utils/registration.js';
 import { errorCode, log } from './logs/logger.js';
 import { TicketStore, ticketSeed } from './tickets/store.js';
@@ -38,6 +38,8 @@ async function main(): Promise<void> {
     if (env.register && !registered) {
       try { await register(env); registered = true; } catch (error) { log('registration_failed', { code: errorCode(error) }, 'error'); }
     }
+    try { await recoverJoinRoles(ctx); }
+    catch (error) { log('join_role_recovery_failed', { guildId: env.guildId, code: errorCode(error) }, 'error'); }
     if (ticketStore.snapshot().config.panelChannelId) {
       try {
         const mode = ticketStore.snapshot().config.mode;
@@ -50,11 +52,13 @@ async function main(): Promise<void> {
   });
   client.on(Events.InteractionCreate, i => { void onInteraction(i, ctx); });
   client.on(Events.GuildMemberAdd, member => { void onMemberAdd(member, ctx); });
+  client.on(Events.GuildMemberUpdate, (before, member) => { void onMemberScreened(before, member, ctx); });
   client.on(Events.Error, error => log('discord_client_error', { code: errorCode(error) }, 'error'));
   client.on(Events.ShardError, error => log('discord_gateway_error', { code: errorCode(error) }, 'error'));
   const timer = setInterval(() => {
     ctx.drafts.sweep(); log('health', { rssMB: Math.round(process.memoryUsage().rss / 1048576) });
     void tickets.recover().catch(error => log('ticket_recovery_failed', { code: errorCode(error) }, 'warn'));
+    void recoverJoinRoles(ctx).catch(error => log('join_role_recovery_failed', { guildId: env.guildId, code: errorCode(error) }, 'warn'));
   }, 300_000);
   timer.unref();
   let stopping = false;
