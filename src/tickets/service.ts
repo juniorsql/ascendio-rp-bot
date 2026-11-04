@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits as P, PermissionsBitField, StringSelectMenuBuilder, type Client, type Guild, type GuildMember, type OverwriteResolvable, type TextChannel, type ThreadChannel } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, ContainerBuilder, MessageFlags, PermissionFlagsBits as P, PermissionsBitField, SeparatorBuilder, StringSelectMenuBuilder, TextDisplayBuilder, type Client, type Guild, type GuildMember, type OverwriteResolvable, type TextChannel, type ThreadChannel } from 'discord.js';
 import { errorCode, log } from '../logs/logger.js';
 import { safeText, text, UserError } from '../validation/input.js';
 import { departments, ticketLabels, TicketStore, validateTicketConfig, type Department, type Ticket, type TicketConfig } from './store.js';
@@ -32,9 +32,15 @@ export function ticketControls(t: Ticket) {
   )];
 }
 export function ticketPanel(threads = false) {
+  const card = new ContainerBuilder().setAccentColor(0xb49a61)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 🦉 CORUJAL DE HOGWARTS'))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(`**Central de atendimento • Ascendio RP**\n\nPrecisa falar com a equipe? Escolha o assunto no menu abaixo e conte o que você precisa. Um ${threads ? 'tópico' : 'canal'} privado será aberto somente para você e os responsáveis pelo atendimento.\n\n📩 **Suporte** — Dúvidas e ajuda com o servidor.\n💎 **Doações** — Informações e atendimento sobre doações.\n📖 **Solicitar RP** — Pedidos e propostas de roleplay.\n⚠️ **Reportar bug** — Problemas técnicos e erros encontrados.`))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(`**Um atendimento por pessoa de cada vez.**\nDescreva sua solicitação com detalhes e aguarde a equipe. Não envie senhas ou tokens.${threads ? '\nAo encerrar, a conversa será arquivada, sem exclusão.' : ''}`));
   return {
-    embeds: [{ color: 0xb49a61, title: 'CENTRAL DE ATENDIMENTO', description: `Precisa falar com a equipe do Ascendio RP?\n\nSelecione o assunto abaixo e descreva o que você precisa. Um ${threads ? 'tópico' : 'canal'} privado será aberto para você e a equipe responsável.\n\n**Um atendimento por pessoa de cada vez.**${threads ? '\nAo encerrar, a conversa será arquivada, sem exclusão.' : ''}` }],
-    components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId('ticket:select').setPlaceholder('Selecione o assunto do atendimento').addOptions(...departments.map(d => ({ label: ticketLabels[d].label, value: d, emoji: ticketLabels[d].emoji, description: ticketLabels[d].description }))))],
+    flags: MessageFlags.IsComponentsV2 as const,
+    components: [card, new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId('ticket:select').setPlaceholder('Selecione o assunto do atendimento').addOptions(...departments.map(d => ({ label: ticketLabels[d].label, value: d, emoji: ticketLabels[d].emoji, description: ticketLabels[d].description }))))],
     allowedMentions: none,
   };
 }
@@ -130,11 +136,12 @@ export class Tickets {
       const previous = state.panelMessageId ? await ch.messages.fetch(state.panelMessageId).catch(e => { if (e.code !== 10008) throw e; return null; }) : null;
       if (previous) {
         if (previous.author.id !== this.client.user!.id) throw new UserError('O painel salvo não pertence a este bot.');
-        await previous.edit(ticketPanel(state.config.mode === 'thread')); return previous.id;
+        await previous.edit({ ...ticketPanel(state.config.mode === 'thread'), content: null, embeds: [] }); return previous.id;
       }
       // Recupera um envio cuja confirmação local tenha sido interrompida.
       const recent = await ch.messages.fetch({ limit: 50 });
       const found = recent.find(m => m.author.id === this.client.user!.id && m.components.some(row => 'components' in row && row.components.some(c => 'customId' in c && c.customId === 'ticket:select')));
+      if (found) await found.edit({ ...ticketPanel(state.config.mode === 'thread'), content: null, embeds: [] });
       const sent = found ?? await ch.send({ ...ticketPanel(state.config.mode === 'thread'), nonce: `tp${this.guildId}`, enforceNonce: true });
       await this.store.transact(s => { s.panelMessageId = sent.id; });
       return sent.id;

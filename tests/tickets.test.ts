@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ChannelType, Collection, PermissionFlagsBits as P, PermissionsBitField, type Client, type GuildMember, type Interaction } from 'discord.js';
+import { ChannelType, Collection, MessageFlags, PermissionFlagsBits as P, PermissionsBitField, type Client, type GuildMember, type Interaction } from 'discord.js';
 import { departments, TicketStore, ticketDefaults, ticketSeed } from '../src/tickets/store.js';
 import { Tickets, ticketOverwrites, ticketPanel, ticketStaff } from '../src/tickets/service.js';
 import { onInteraction, type Context } from '../src/commands/handler.js';
@@ -167,7 +167,13 @@ test('aviso direto bloqueia destinatário sem cargo e não vaza após adulteraç
 test('painel tem os quatro assuntos e publicação repetida atualiza a mesma mensagem', async t => {
   const f = await fixture(t); const id = await f.tickets.ensurePanel();
   assert.equal(await f.tickets.ensurePanel(), id); assert.equal(f.sends.length, 1);
-  assert.equal(ticketPanel().components[0]!.toJSON().components[0]!.options!.length, 4);
+  const panel = ticketPanel();
+  const menu = panel.components[1]!.toJSON();
+  assert.deepEqual((menu.components[0] as any).options.map((o: any) => o.value), departments);
+  assert.equal(panel.flags, MessageFlags.IsComponentsV2);
+  assert.equal(panel.components[0]!.toJSON().type, 17);
+  assert.deepEqual(f.edits.at(-1).embeds, []);
+  assert.equal(f.edits.at(-1).content, null);
   const reopened = new TicketStore(f.dir); await reopened.init(); assert.equal(reopened.snapshot().panelMessageId, id);
 });
 test('usuário comum abre canal privado, estranho não vê, equipe vê e menções não notificam', async t => {
