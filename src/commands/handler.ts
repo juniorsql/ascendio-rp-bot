@@ -1,4 +1,4 @@
-import { AttachmentBuilder, MessageFlags, PermissionFlagsBits, type Client, type Interaction, type ChatInputCommandInteraction, type ModalSubmitInteraction } from 'discord.js';
+import { AttachmentBuilder, MessageFlags, PermissionFlagsBits, TextDisplayBuilder, type Client, type Interaction, type ChatInputCommandInteraction, type ModalSubmitInteraction } from 'discord.js';
 import type { Env } from '../config/env.js';
 import { kinds, palette, type Kind } from '../config/defaults.js';
 import { controls, form, postForm, linkForm } from '../components/forms.js';
@@ -10,6 +10,7 @@ import { postEmbed, rulesEmbeds, welcomeEmbed, type Post } from '../templates/em
 import { color, fields, imageUrl, safeText, text, urlButtons, UserError } from '../validation/input.js';
 import type { Tickets } from '../tickets/service.js';
 import { ticketInteraction } from '../tickets/handler.js';
+import { publicationCard } from '../components/publication-card.js';
 export interface Context { client: Client; env: Env; store: Store; drafts: Drafts; tickets?: Tickets }
 type Usable = ChatInputCommandInteraction | ModalSubmitInteraction | Extract<Interaction, { customId: string }>;
 const none = { parse: [] as never[], repliedUser: false };
@@ -44,7 +45,13 @@ async function changed(ctx: Context, userId: string, action: string, mutate: (co
 }
 function preview(d: Draft) {
   const notification = d.notifyEveryone ? '**@everyone ATIVADO:** ao clicar em Publicar, a mensagem mencionará todos no canal de destino.' : 'Notificação @everyone: desativada.';
-  return { content: `**PRÉVIA PRIVADA** • Destino: <#${d.channelId}>\n${notification}\nBotões de URL: ${d.links.length}/5. Confira o conteúdo antes de publicar. Expira em 15 minutos a partir da criação.`, embeds: d.embeds, components: controls(d), allowedMentions: none };
+  const content = `**PRÉVIA PRIVADA** • Destino: <#${d.channelId}>\n${notification}\nBotões de URL: ${d.links.length}/5. Confira o conteúdo antes de publicar. Expira em 15 minutos a partir da criação.`;
+  if (d.layoutV2) return { content: null, embeds: [], flags: MessageFlags.IsComponentsV2 as const, components: [new TextDisplayBuilder().setContent(content), publicationCard(d.embeds, d.post?.imagePosition ?? 'bottom', content), ...controls(d)], allowedMentions: none };
+  return { content, embeds: d.embeds, components: controls(d), allowedMentions: none };
+}
+function completedPreview(d: Draft, content: string) {
+  return d.layoutV2 ? { content: null, embeds: [], flags: MessageFlags.IsComponentsV2 as const, components: [new TextDisplayBuilder().setContent(content)], allowedMentions: none }
+    : { content, embeds: [], components: [], allowedMentions: none };
 }
 async function configCommand(i: ChatInputCommandInteraction, ctx: Context) {
   const config = ctx.store.snapshot().config;
@@ -162,12 +169,14 @@ async function handle(i: Interaction, ctx: Context) {
     await destination(i, ctx, channelId);
     const post: Post = { kind: old?.post?.kind ?? kindOf(key!), title: text(i.fields.getTextInputValue('title'), 256, 'Título'),
       description: text(i.fields.getTextInputValue('description'), 4000, 'Conteúdo'), image: imageUrl(i.fields.getTextInputValue('image')),
-      thumbnail: imageUrl(i.fields.getTextInputValue('thumbnail')), fields: fields(i.fields.getTextInputValue('fields')), ...(old?.post?.color !== undefined ? { color: old.post.color } : {}) };
+      thumbnail: imageUrl(i.fields.getTextInputValue('thumbnail')), fields: fields(i.fields.getTextInputValue('fields')), ...(old?.post?.color !== undefined ? { color: old.post.color } : {}), ...(old?.post?.imagePosition ? { imagePosition: old.post.imagePosition } : {}) };
     const embeds = postEmbed(post, ctx.store.snapshot().config);
     if (old) ctx.drafts.get(old.id, i.user.id, ctx.env.guildId);
     const draft = old ?? ctx.drafts.create({ ownerId: i.user.id, guildId: ctx.env.guildId, channelId, post, embeds });
+    const updated = { ...draft, post, embeds };
+    const reply = await i.editReply(preview(updated));
     draft.post = post; draft.embeds = embeds;
-    return i.editReply(preview(draft));
+    return reply;
   }
   const [action, id] = i.customId.split(':');
   const draft = ctx.drafts.get(id!, i.user.id, ctx.env.guildId);
@@ -198,7 +207,7 @@ async function handle(i: Interaction, ctx: Context) {
       const messageId = await publish(draft, ctx.store, (_embeds, nonce) => ch.send(publicationOptions(draft, nonce)));
       ctx.drafts.remove(draft.id);
       await audit(ctx, i.user.id, draft.notifyEveryone ? 'publication_sent_everyone' : 'publication_sent', ch.id, messageId);
-      return i.editReply({ content: `Publicação enviada: https://discord.com/channels/${ctx.env.guildId}/${ch.id}/${messageId}`, embeds: [], components: [] });
+      return i.editReply(completedPreview(draft, `Publicação enviada: https://discord.com/channels/${ctx.env.guildId}/${ch.id}/${messageId}`));
     } finally { draft.busy = false; }
   }
   await i.deferUpdate();
@@ -207,7 +216,18 @@ async function handle(i: Interaction, ctx: Context) {
     ctx.drafts.remove(draft.id);
     await ctx.store.transact(s => { s.audit.push({ time: Date.now(), action: 'publication_cancelled', userId: i.user.id, channelId: draft.channelId }); });
     log('publication_cancelled', { userId: i.user.id, channelId: draft.channelId });
-    return i.editReply({ content: 'Publicação cancelada.', embeds: [], components: [] });
+    return i.editReply(completedPreview(draft, 'Publicação cancelada.'));
+  }
+  if (i.isStringSelectMenu() && action === 'layout' && draft.post) {
+    const position = i.values[0];
+    if (position !== 'top' && position !== 'bottom') throw new UserError('Posição da imagem inválida.');
+    const updated: Draft = { ...draft, layoutV2: draft.layoutV2 || position === 'top', post: { ...draft.post, imagePosition: position } };
+    draft.busy = true;
+    try {
+      const reply = await i.editReply(preview(updated));
+      draft.layoutV2 = updated.layoutV2; draft.post = updated.post;
+      return reply;
+    } finally { draft.busy = false; }
   }
   if (i.isStringSelectMenu() && action === 'theme' && draft.post) {
     const selection = i.values[0];
@@ -215,8 +235,9 @@ async function handle(i: Interaction, ctx: Context) {
     if (!(Object.values(palette) as number[]).includes(value)) throw new UserError('Cor inválida.');
     const updated = { ...draft.post, color: value };
     const embeds = postEmbed(updated, ctx.store.snapshot().config);
+    const reply = await i.editReply(preview({ ...draft, post: updated, embeds }));
     draft.post = updated; draft.embeds = embeds;
-    return i.editReply(preview(draft));
+    return reply;
   }
   throw new UserError('Componente desconhecido.');
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PermissionFlagsBits, PermissionsBitField } from 'discord.js';
+import { MessageFlags, PermissionFlagsBits, PermissionsBitField } from 'discord.js';
 import { defaults } from '../src/config/defaults.js';
 import { loadEnv } from '../src/config/env.js';
 import { color, fields, imageUrl, safeText, validateEmbeds, urlButtons } from '../src/validation/input.js';
@@ -14,6 +14,7 @@ import { authorized } from '../src/services/discord.js';
 import { commands } from '../src/commands/definitions.js';
 import { controls, postForm } from '../src/components/forms.js';
 import { errorCode, log } from '../src/logs/logger.js';
+import { publicationCard } from '../src/components/publication-card.js';
 const guildId = '123456789012345678', ownerId = '223456789012345678', channelId = '323456789012345678';
 const makeDraft = (drafts = new Drafts()): Draft => drafts.create({ guildId, ownerId, channelId, embeds: postEmbed({ kind: 'comunicado', title: 'Convocação', description: 'Encontro no salão principal.', image: '', thumbnail: '', fields: [] }, defaults()) });
 async function fixture(t: TestContext) {
@@ -52,6 +53,50 @@ test('botões entram na deduplicação e no payload público como links sem coma
   const row = (payload.components![0] as { toJSON(): any }).toJSON();
   assert.deepEqual(row.components.map((c: any) => ({ style: c.style, label: c.label, url: c.url, customId: c.custom_id })), [{ style: 5, label: 'Discord', url: 'https://discord.gg/exemplo', customId: undefined }]);
   assert.deepEqual(payload.allowedMentions?.parse, []);
+});
+
+test('card com banner renderiza imagem, título, separador e corpo nessa ordem, preservando miniatura e campos', () => {
+  const embed = { title: 'Convite', description: 'Nossa comunidade.', color: 0xb49a61, image: { url: 'https://example.com/banner.png' }, thumbnail: { url: 'https://example.com/logo.png' }, fields: [{ name: 'Acesso', value: 'Antecipado' }] };
+  const card = publicationCard([embed], 'top').toJSON();
+  assert.equal(card.type, 17); assert.equal(card.accent_color, embed.color);
+  assert.deepEqual(card.components.map(c => c.type), [12,9,14,10]);
+  const data = card as any;
+  assert.equal(data.components[0].items[0].media.url, embed.image.url);
+  assert.equal(data.components[1].components[0].content, '## Convite');
+  assert.equal(data.components[1].accessory.media.url, embed.thumbnail.url);
+  assert.match(data.components[3].content, /\*\*Acesso\*\*\nAntecipado/);
+  assert.equal(publicationCard([embed], 'bottom').toJSON().components.at(-1)!.type, 12);
+});
+
+test('publicação com imagem no topo usa somente componentes e menção coletiva exige ativação explícita', () => {
+  const post = { kind: 'comunicado' as const, title: 'Convite', description: 'Olá @everyone.', image: 'https://example.com/banner.png', thumbnail: '', fields: [], imagePosition: 'top' as const };
+  const d = new Drafts().create({ guildId, ownerId, channelId, post, embeds: postEmbed(post, defaults()), links: [{ label: 'Discord', url: 'https://discord.gg/exemplo' }] });
+  const payload = publicationOptions(d, 'banner-nonce');
+  assert.equal(payload.flags, MessageFlags.IsComponentsV2); assert.equal(payload.content, undefined); assert.equal(payload.embeds, undefined);
+  assert.deepEqual(payload.allowedMentions?.parse, []);
+  assert.equal((payload.components![0] as { toJSON(): any }).toJSON().type, 17);
+  assert.equal((payload.components!.at(-1) as { toJSON(): any }).toJSON().components[0].style, 5);
+  d.notifyEveryone = true;
+  const notified = publicationOptions(d, 'banner-nonce-2');
+  assert.equal((notified.components![0] as { toJSON(): any }).toJSON().content, '@everyone');
+  assert.deepEqual(notified.allowedMentions?.parse, ['everyone']);
+});
+
+test('posição da imagem faz parte da deduplicação e ativar everyone não muda a chave', () => {
+  const a = makeDraft(), b = makeDraft();
+  a.layoutV2 = true; a.post = { kind: 'comunicado', title: 'Convocação', description: 'Encontro.', image: '', thumbnail: '', fields: [], imagePosition: 'top' };
+  assert.notEqual(fingerprint(a), fingerprint(b));
+  const top = fingerprint(a); a.notifyEveryone = true; assert.equal(fingerprint(a), top);
+  a.post.imagePosition = 'bottom'; assert.notEqual(fingerprint(a), top);
+});
+
+test('card respeita orçamento de texto antes de reservar ou enviar, sem truncar conteúdo', async t => {
+  const { store } = await fixture(t), d = makeDraft();
+  d.layoutV2 = true; d.embeds = [{ title: 'Título', description: 'a'.repeat(4000) }];
+  let sends = 0;
+  await assert.rejects(publish(d, store, async () => { sends++; return { id: ownerId }; }), /4000/);
+  assert.equal(sends, 0); assert.equal(d.busy, false); assert.equal(store.snapshot().receipts.length, 0);
+  assert.throws(() => publicationCard([{ title: 'Teste', description: 'a'.repeat(3700) }], 'top', 'p'.repeat(400)), /4000/);
 });
 test('campos e cores validam formato e limites', () => {
   assert.equal(color('#B49A61'), 0xb49a61); assert.throws(() => color('red'));

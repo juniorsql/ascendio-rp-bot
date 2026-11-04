@@ -33,7 +33,10 @@ export function controls(draft: Draft) {
   if (!draft.post) return [row, ...linkRows(draft.links)];
   const theme = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId(`theme:${draft.id}`).setPlaceholder('Escolher cor temática')
     .addOptions(Object.entries(palette).map(([name, value]) => ({ label: name[0]!.toUpperCase() + name.slice(1), value: String(value) }))));
-  return [row, theme, ...linkRows(draft.links)];
+  const imagePosition = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId(`layout:${draft.id}`).setPlaceholder('Posição da imagem')
+    .addOptions({ label: 'Imagem no topo', value: 'top', description: 'Banner acima do título e do texto', default: draft.post.imagePosition === 'top' },
+      { label: 'Imagem embaixo', value: 'bottom', description: 'Imagem após o texto', default: draft.post.imagePosition !== 'top' }));
+  return [row, theme, imagePosition, ...linkRows(draft.links)];
 }
 export function linkForm(draft: Draft): ModalBuilder {
   return form(`links:edit:${draft.id}`, 'Botões de URL', [{ id: 'links', label: 'Nome | https://endereço (um por linha)', max: 3000, required: false, paragraph: true,

@@ -20,6 +20,8 @@ A recuperação usa páginas REST de até 200 membros com cache desativado, no m
 
 A versão **1.3.5** permite até cinco **botões de URL** por publicação. Eles aparecem abaixo do embed, com o nome escolhido, e abrem o site diretamente. São configurados na prévia privada, sem aumentar o formulário principal de composição.
 
+A versão **1.3.6** acrescenta o menu **Posição da imagem** na prévia: **Imagem no topo** mostra o banner antes do título e do conteúdo; **Imagem embaixo** coloca a imagem depois do texto. A escolha é por publicação e começa embaixo, mantendo o formato anterior até a equipe selecionar o topo.
+
 **Estado da entrega:** implementação, verificações locais, publicação no GitHub, autenticação real, registro dos comandos e deploy gratuito executados. O acesso aos canais privados de boas-vindas e logs foi confirmado; o aceite final do fluxo com membros reais e publicações pela equipe permanece em aberto. O token não faz parte do repositório. Consulte [VALIDACAO.md](docs/VALIDACAO.md) para as verificações e pendências.
 
 ## 1. Requisitos e versões
@@ -149,6 +151,10 @@ Site | https://example.com
 ```
 
 Use até cinco linhas, com nome de até 80 caracteres e URL HTTPS pública de até 512 caracteres. Deixe o formulário vazio para remover todos os botões. Confira os botões reais na prévia e clique em **Publicar**. Alterar cor ou conteúdo preserva os links. Funciona também na prévia de `/regras`. Somente os botões de link são enviados ao canal; os controles administrativos permanecem na prévia privada. URLs fazem parte da deduplicação, e uma falha ao atualizar a prévia mantém a configuração anterior dos botões. O bot não acessa as URLs nem envia token ao site.
+
+Para usar um banner, preencha **Imagem principal (HTTPS)** no formulário e, na prévia, abra o menu inicialmente marcado **Imagem embaixo** e escolha **Imagem no topo**. O resultado aparece antes de publicar, mantendo cor, miniatura, conteúdo, campos e links. Essa opção usa Components V2 para montar imagem, título, separador e texto dentro do mesmo card; os botões de URL continuam abaixo dele. A prévia não menciona ninguém. `@everyone` continua exigindo ativação explícita e permissão atual no destino.
+
+Nesse layout, os textos do card e da prévia precisam caber no limite total de 4000 caracteres do Discord. O bot recusa textos que ultrapassem esse limite, sem truncar nem publicar. Após selecionar topo, voltar para baixo mantém o card em Components V2, pois o Discord não permite remover esse formato de uma mensagem já convertida. Cancelar e concluir usam uma resposta compatível com esse formato. Publicações antigas não são modificadas automaticamente.
 
 ### Notificar com @everyone
 

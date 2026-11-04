@@ -1,7 +1,7 @@
 import type { APIEmbed } from 'discord.js';
 import { palette, type Config, type Kind } from '../config/defaults.js';
 import { safeText, validateEmbeds } from '../validation/input.js';
-export interface Post { kind: Kind; title: string; description: string; image: string; thumbnail: string; fields: NonNullable<APIEmbed['fields']>; color?: number }
+export interface Post { kind: Kind; title: string; description: string; image: string; thumbnail: string; fields: NonNullable<APIEmbed['fields']>; color?: number; imagePosition?: 'top' | 'bottom' }
 export function postEmbed(post: Post, config: Config): APIEmbed[] {
   const t = config.templates[post.kind];
   const image = post.image || t.image;

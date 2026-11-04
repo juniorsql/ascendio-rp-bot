@@ -8,7 +8,7 @@ Data: **23/10/2026**, horário de referência America/Sao_Paulo.
 | --- | --- |
 | Instalação das dependências pelo npm | Concluída; lockfile criado |
 | TypeScript estrito, incluindo fontes e testes | Passou |
-| Testes automatizados, incluindo publicações, botões de URL, cargo de entrada e tickets | **92 passaram, 0 falharam** |
+| Testes automatizados, incluindo posição da imagem, botões de URL, cargo de entrada e tickets | **100 passaram, 0 falharam** |
 | Compilação para `dist/` | Passou |
 | Testes executados diretamente com Node 24.22.1 | 28 passaram |
 | Criação e destruição de cliente Discord sem login, heap V8 de 128 MB | Passou; RSS observado de aproximadamente **76 MB** |
@@ -109,3 +109,8 @@ Use [ACEITE.md](ACEITE.md) para concluir e registrar a homologação operacional
 - Sete testes adicionais cobrem validação de nome/URL/quantidade, URLs incluídas na deduplicação, payload Link sem custom ID, composição e edição em prévia, preservação ao alterar cor/conteúdo, remoção, uso em regras, bloqueio de outro usuário, falha da prévia e edição concorrente com confirmação.
 - TypeScript estrito, 92 testes e compilação passaram. Os envios são simulados: nenhum anúncio público foi criado automaticamente para testar a função.
 - Cargo real `🎟️ Acesso antecipado` criado em dourado, sem permissões administrativas ou atribuição automática. A existência e os dados do cargo foram confirmados pela API, preservando os demais cargos.
+
+## Posição da imagem — 04/11/2026
+
+- Oito testes adicionais: ordem banner/título/separador/corpo, miniatura e campos, payload V2 sem content/embeds, menções explícitas somente ao publicar, posição na deduplicação, orçamento de texto anterior à reserva, conversão da prévia, preservação de cor/conteúdo/links, retorno para baixo, conclusão/cancelamento compatíveis e falha da prévia sem alteração silenciosa.
+- TypeScript estrito, 100 testes e compilação passaram. O fluxo de interação é simulado; nenhum anúncio público foi criado ou modificado automaticamente para testar o layout. A aceitação visual com a conta humana permanece no fluxo normal de prévia e confirmação.

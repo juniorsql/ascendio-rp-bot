@@ -118,6 +118,59 @@ test('edição de botões em andamento bloqueia confirmação concorrente', asyn
   release(); await pending;
   assert.equal(d.links.length, 1); assert.equal(d.busy, false);
 });
+
+test('seleção de imagem no topo converte a prévia, preserva URL e publica banner acima do título', async t => {
+  const f = await setup(t);
+  const post = { kind: 'comunicado' as const, title: 'Convite', description: 'Faça parte da comunidade.', image: 'https://example.com/banner.png', thumbnail: '', fields: [] };
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config), links: [{ label: 'Discord', url: 'https://discord.gg/exemplo' }] });
+  await onInteraction(f.interaction('select', { customId: `layout:${d.id}`, values: ['top'] }), f.ctx);
+  assert.equal(d.layoutV2, true); assert.equal(d.post!.imagePosition, 'top'); assert.equal(f.sent.length, 0);
+  const preview = f.replies.at(-1);
+  assert.equal(preview.flags, MessageFlags.IsComponentsV2); assert.equal(preview.content, null); assert.deepEqual(preview.embeds, []);
+  const card = preview.components[1].toJSON();
+  assert.equal(card.components[0].type, 12); assert.equal(card.components[1].content, '## Convite');
+  assert.deepEqual(preview.allowedMentions.parse, []);
+  await onInteraction(f.interaction('button', { customId: `notify:${d.id}` }), f.ctx);
+  assert.deepEqual(f.replies.at(-1).allowedMentions.parse, []);
+  await onInteraction(f.interaction('select', { customId: `theme:${d.id}`, values: [String(0x202f4b)] }), f.ctx);
+  const input: Record<string,string> = { title: 'Convite editado', description: 'Outra descrição.', image: post.image, thumbnail: '', fields: '' };
+  await onInteraction(f.interaction('modal', { customId: `post:edit:${d.id}`, isFromMessage: () => true, fields: { getTextInputValue: (key: string) => input[key] } }), f.ctx);
+  assert.equal(d.post!.imagePosition, 'top'); assert.equal(d.links.length, 1);
+  await onInteraction(f.interaction('button', { customId: `confirm:${d.id}` }), f.ctx);
+  assert.equal(f.sent.length, 1); assert.equal(f.sent[0].flags, MessageFlags.IsComponentsV2);
+  assert.equal(f.sent[0].content, undefined); assert.equal(f.sent[0].embeds, undefined);
+  assert.equal(f.sent[0].components[0].toJSON().content, '@everyone');
+  const published = f.sent[0].components[1].toJSON();
+  assert.equal(published.components[0].type, 12); assert.equal(published.components[1].content, '## Convite editado');
+  assert.equal(published.accent_color, 0x202f4b);
+  assert.equal(f.sent[0].components.at(-1).toJSON().components[0].url, 'https://discord.gg/exemplo');
+  assert.equal(f.replies.at(-1).content, null); assert.equal(f.replies.at(-1).components[0].toJSON().type, 10);
+});
+
+test('voltar imagem para baixo mantém formato compatível e cancelar limpa o card', async t => {
+  const f = await setup(t), post = { kind: 'comunicado' as const, title: 'Teste', description: 'Descrição.', image: 'https://example.com/banner.png', thumbnail: '', fields: [] };
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config) });
+  for (const position of ['top','bottom']) await onInteraction(f.interaction('select', { customId: `layout:${d.id}`, values: [position] }), f.ctx);
+  assert.equal(d.layoutV2, true); assert.equal(d.post!.imagePosition, 'bottom');
+  assert.equal(f.replies.at(-1).components[1].toJSON().components.at(-1).type, 12);
+  await onInteraction(f.interaction('button', { customId: `cancel:${d.id}` }), f.ctx);
+  assert.equal(f.sent.length, 0); assert.equal(f.replies.at(-1).flags, MessageFlags.IsComponentsV2);
+  assert.equal(f.replies.at(-1).content, null); assert.match(f.replies.at(-1).components[0].toJSON().content, /cancelada/);
+});
+
+test('falha na conversão da prévia não muda posição aprovada nem o formato do rascunho', async t => {
+  const f = await setup(t), post = { kind: 'comunicado' as const, title: 'Teste', description: 'Descrição.', image: 'https://example.com/banner.png', thumbnail: '', fields: [] };
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config) });
+  await onInteraction(f.interaction('select', { customId: `layout:${d.id}`, values: ['top'], editReply: async () => { throw new Error('Preview unavailable'); } }), f.ctx);
+  assert.equal(d.layoutV2, false); assert.equal(d.post!.imagePosition, undefined); assert.equal(d.busy, false); assert.equal(f.sent.length, 0);
+});
+
+test('texto grande e posição inválida são recusados sem truncar o conteúdo original', async t => {
+  const f = await setup(t), post = { kind: 'comunicado' as const, title: 'Teste', description: 'a'.repeat(4000), image: 'https://example.com/banner.png', thumbnail: '', fields: [] };
+  const d = f.ctx.drafts.create({ guildId, ownerId: userId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config) });
+  for (const value of ['top','outro']) await onInteraction(f.interaction('select', { customId: `layout:${d.id}`, values: [value] }), f.ctx);
+  assert.equal(d.layoutV2, false); assert.equal(d.post!.description.length, 4000); assert.equal(d.post!.imagePosition, undefined); assert.equal(f.sent.length, 0);
+});
 test('usuário comum não abre modal e perda de permissão antes de confirmar bloqueia envio', async t => {
   const f = await setup(t); f.setPermissions(0n);
   await onInteraction(f.interaction('command', { commandName: 'evento' }), f.ctx);
