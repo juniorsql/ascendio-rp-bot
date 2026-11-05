@@ -42,6 +42,7 @@ async function main(): Promise<void> {
     catch (error) { log('join_role_recovery_failed', { guildId: env.guildId, code: errorCode(error) }, 'error'); }
     if (ticketStore.snapshot().config.panelChannelId) {
       try {
+        if (env.ticketLogChannelId) await tickets.configureLogChannel(env.ticketLogChannelId);
         const mode = ticketStore.snapshot().config.mode;
         if (process.env.TICKETS_USE_THREADS === 'false' && mode !== 'channel') await tickets.enableChannels(ticketSeed(process.env.TICKETS_CONFIG)?.routes);
         else if (mode === 'thread' || (mode === undefined && process.env.TICKETS_USE_THREADS === 'true')) await tickets.enableThreads();

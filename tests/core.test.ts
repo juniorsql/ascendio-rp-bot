@@ -126,6 +126,10 @@ test('ambiente obrigatório falha sem revelar o token', () => {
   assert.throws(() => loadEnv({ DISCORD_TOKEN: 'x'.repeat(60), DISCORD_CLIENT_ID: 'inválido' }), /DISCORD_CLIENT_ID/);
   const env = loadEnv({ DISCORD_TOKEN: 'x'.repeat(60), DISCORD_CLIENT_ID: ownerId, DISCORD_GUILD_ID: guildId, REGISTER_COMMANDS_ON_START: 'false' });
   assert.equal(env.register, false); assert.equal(env.guildId, guildId);
+  assert.equal(env.ticketLogChannelId, '');
+  const source = { DISCORD_TOKEN: 'x'.repeat(60), DISCORD_CLIENT_ID: ownerId, DISCORD_GUILD_ID: guildId };
+  assert.equal(loadEnv({ ...source, TICKETS_LOG_CHANNEL_ID: channelId }).ticketLogChannelId, channelId);
+  assert.throws(() => loadEnv({ ...source, TICKETS_LOG_CHANNEL_ID: 'transcrição' }), /ID válido/);
 });
 test('usuário comum é bloqueado, cargos publicam e configuração exige Gerenciar servidor', () => {
   const config = defaults(); config.adminRoleIds = [ownerId];

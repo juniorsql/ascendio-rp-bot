@@ -128,6 +128,17 @@ export class Tickets {
       log('tickets_channel_mode', { guildId: this.guildId });
     });
   }
+  async configureLogChannel(channelId: string): Promise<void> {
+    return this.exclusive('setup', async () => {
+      const config = this.store.snapshot().config;
+      const next = { ...config, logChannelId: channelId };
+      validateTicketConfig(next);
+      await this.checkConfig(next);
+      if (config.logChannelId === channelId) return;
+      await this.store.transact(s => { s.config.logChannelId = channelId; });
+      log('tickets_log_channel_configured', { guildId: this.guildId, channelId });
+    });
+  }
   async ensurePanel(): Promise<string> {
     return this.exclusive('panel', async () => {
       const state = this.store.snapshot();

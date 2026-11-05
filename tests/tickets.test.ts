@@ -176,6 +176,35 @@ test('painel tem os quatro assuntos e publicação repetida atualiza a mesma men
   assert.equal(f.edits.at(-1).content, null);
   const reopened = new TicketStore(f.dir); await reopened.init(); assert.equal(reopened.snapshot().panelMessageId, id);
 });
+test('reparar destino dos registros preserva tickets, equipes e painel e persiste a correção', async t => {
+  const f = await fixture(t); await f.tickets.ensurePanel();
+  await f.tickets.open(ownerId, 'suporte', 'Atendimento existente', 'Histórico preservado.');
+  await f.store.transact(s => { s.config.logChannelId = '733456789012345678'; });
+  const before = f.store.snapshot();
+  await f.tickets.configureLogChannel(logId);
+  const after = f.store.snapshot();
+  assert.deepEqual(after, { ...before, config: { ...before.config, logChannelId: logId } });
+  const reopened = new TicketStore(f.dir); await reopened.init();
+  assert.deepEqual(reopened.snapshot(), after);
+  await f.tickets.checkConfig();
+});
+
+test('reparo recusa destino público, externo, ausente ou sem permissões sem alterar estado', async t => {
+  for (const scenario of ['public', 'foreign', 'missing', 'permissions']) {
+    const f = await fixture(t);
+    await f.store.transact(s => { s.config.logChannelId = '733456789012345678'; });
+    const before = f.store.snapshot(); const ch = f.channels.get(logId)!;
+    if (scenario === 'public') ch.permissionsFor = () => new PermissionsBitField([P.ViewChannel, P.ReadMessageHistory, P.SendMessages, P.EmbedLinks, P.AttachFiles, P.AddReactions, P.ManageChannels, P.ManageRoles]);
+    if (scenario === 'foreign') ch.guildId = '833456789012345678';
+    if (scenario === 'missing') f.channels.delete(logId);
+    if (scenario === 'permissions') ch.permissionsFor = () => new PermissionsBitField(P.ViewChannel);
+    await assert.rejects(f.tickets.configureLogChannel(logId));
+    assert.deepEqual(f.store.snapshot(), before);
+    const reopened = new TicketStore(f.dir); await reopened.init();
+    assert.deepEqual(reopened.snapshot(), before);
+  }
+});
+
 test('usuário comum abre canal privado, estranho não vê, equipe vê e menções não notificam', async t => {
   const f = await fixture(t);
   const opened = await f.tickets.open(ownerId, 'suporte', 'Dúvida @everyone', 'Preciso de ajuda <@&123456789012345678>.');

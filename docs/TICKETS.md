@@ -1,4 +1,4 @@
-# Central de atendimento — 1.3.8
+# Central de atendimento — 1.3.9
 
 ## Painel de abertura
 
@@ -86,6 +86,8 @@ Exigem **Gerenciar servidor**:
 Configurar o canal de entrada não muda automaticamente os cargos que podem vê-lo; respeita-se o acesso existente do servidor. O bot precisa gerenciar canais e permissões e ter acesso às categorias de abertura e arquivo. O painel e os registros precisam permitir envio, histórico, links e anexos ao bot. O canal de registros não pode estar aberto a @everyone.
 
 ## Persistência e configuração inicial
+
+Se o canal de registros for removido, defina `TICKETS_LOG_CHANNEL_ID` com o ID de outro canal de texto privado e reinicie o bot. A inicialização valida o destino e os acessos antes de persistir somente o novo `logChannelId`. Painel, equipes, tickets e históricos são preservados. Um destino público, de outro servidor ou sem as permissões exigidas é recusado sem alterar a configuração salva. A variável pode ser removida após a correção, que permanece no estado persistido.
 
 `DATA_DIR/tickets.json` é independente do estado de publicações. Contém configuração, ID do painel e o índice dos tickets. Escritas são serializadas, sincronizadas e trocadas por rename. Uma instância por servidor. Estado inválido causa recusa de início, sem sobrescrever os dados.
 
