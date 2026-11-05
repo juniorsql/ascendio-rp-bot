@@ -5,6 +5,7 @@ import { safeText, text, UserError } from '../validation/input.js';
 import { departments, ticketLabels, TicketStore, validateTicketConfig, type Department, type Ticket, type TicketConfig } from './store.js';
 import { accessRole, assertHub, ensureHubs, findThread, grantHubAccess, threadName } from './thread-hubs.js';
 import { assertNotificationChannel, ensureNotificationChannels, openingNotice } from './notifications.js';
+import { closedTicketRecord, isClosedTicketRecord } from './records.js';
 
 const none = { parse: [] as never[], repliedUser: false };
 const read = [P.ViewChannel, P.ReadMessageHistory];
@@ -349,9 +350,8 @@ export class Tickets {
       const guild = await this.guild();
       if (logs.permissionsFor(guild.roles.everyone)?.has(P.ViewChannel)) throw new UserError('O registro não foi enviado: o canal de logs deixou de ser privado. O histórico continua no ticket.');
       const recent = await logs.messages.fetch({ limit: 50 });
-      const marker = `Ticket: ${ticket.id}`;
-      const old = recent.find(m => m.author.id === this.client.user!.id && m.content.includes(marker));
-      const sent = old ?? await logs.send({ content: `**Atendimento encerrado • ${ticketLabels[ticket.department].label}**\n${marker}\nSolicitante: <@${ticket.ownerId}>\nResponsável: <@${ticket.closedBy}>\n${ticket.claimedBy ? `Atendido por: <@${ticket.claimedBy}>\n` : ''}Motivo: ${safeText(ticket.reason ?? '')}\nHistórico preservado: <#${channel.id}>`, allowedMentions: none, nonce: `close${ticket.id}`, enforceNonce: true });
+      const old = recent.find(m => m.author.id === this.client.user!.id && isClosedTicketRecord(m, ticket.id));
+      const sent = old ?? await logs.send({ ...closedTicketRecord(ticket, channel.id), nonce: `close${ticket.id}`, enforceNonce: true });
       ticket.logMessageId = sent.id;
     }
     await this.store.transact(s => { Object.assign(s.tickets.find(t => t.id === id)!, ticket); });

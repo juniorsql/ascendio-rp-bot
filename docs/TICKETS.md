@@ -1,8 +1,10 @@
-# Central de atendimento — 1.3.9
+# Central de atendimento — 1.3.10
 
 ## Painel de abertura
 
 O painel Corujal de Hogwarts usa um card com título, assuntos e orientações finais separados por linhas. O menu mantém Suporte, Doações, Solicitar RP e Reportar bug. A atualização edita a mensagem existente, sem enviar avisos ou alterar as equipes e os tickets. Não há assinatura automática no rodapé.
+
+Os encerramentos são registrados em um card com solicitante, setor, assunto, responsável, motivo e link do histórico. O ID do ticket e a data aparecem na parte inferior. As menções são silenciosas. A recuperação reconhece tanto os registros antigos em texto quanto os novos cards para evitar duplicatas após falhas de envio.
 
 ## Canais individuais: modo atual
 

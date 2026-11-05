@@ -8,6 +8,7 @@ import { departments, TicketStore, ticketDefaults, ticketSeed } from '../src/tic
 import { Tickets, ticketOverwrites, ticketPanel, ticketStaff } from '../src/tickets/service.js';
 import { onInteraction, type Context } from '../src/commands/handler.js';
 import { hubOverwrites, hubTopic, findThread, threadName } from '../src/tickets/thread-hubs.js';
+import { closedTicketRecord } from '../src/tickets/records.js';
 
 const guildId = '123456789012345678', botId = '223456789012345678', ownerId = '323456789012345678', staffId = '423456789012345678', outsiderId = '523456789012345678';
 const panelId = '623456789012345678', logId = '723456789012345678', closedId = '823456789012345678', roleId = '923456789012345678';
@@ -24,7 +25,7 @@ async function fixture(t: TestContext) {
   const roles = new Collection<string, any>([[guildId, everyone], [roleId, { id: roleId, name: 'Suporte', managed: false }]]);
   const channels = new Collection<string, any>();
   const creates: any[] = [], threadCreates: any[] = [], edits: any[] = [], sends: any[] = [];
-  let unknownCreate = false, failLog = false, failBeforeCreate = false, failInvite = false, failGrant = false;
+  let unknownCreate = false, failLog = false, failLogAfter = false, failBeforeCreate = false, failInvite = false, failGrant = false;
   let noticeFailure: 'before' | 'after' | null = null;
   function channel(channelId: string, type: ChannelType, overrides: any[] = []) {
     const messages = new Collection<string, any>();
@@ -54,11 +55,12 @@ async function fixture(t: TestContext) {
         if (ch.topic.startsWith('ascendio-ticket-alerts:') && noticeFailure === 'before') throw Object.assign(new Error('Forbidden'), { status: 403 });
         if (channelId === logId && failLog) throw new Error('Log temporarily unavailable');
         sends.push({ channelId, body });
-        const m: any = { id: id(), author: { id: botId }, content: body.content ?? '', components: body.components ?? [], edit: async (body: any) => { m.content = body.content ?? ''; m.components = body.components ?? []; edits.push(body); return m; } };
+        const m: any = { id: id(), author: { id: botId }, content: body.content ?? '', embeds: body.embeds ?? [], components: body.components ?? [], edit: async (body: any) => { m.content = body.content ?? ''; m.embeds = body.embeds ?? []; m.components = body.components ?? []; edits.push(body); return m; } };
         // Real discord.js messages expose parsed components with customId.
         const normalized = () => { m.components = m.components.map((row: any) => { const json = row.toJSON ? row.toJSON() : row; return { components: json.components.map((c: any) => ({ customId: c.custom_id })) }; }); };
         const edit = m.edit; m.edit = async (body: any) => { await edit(body); normalized(); return m; }; normalized();
         messages.set(m.id, m);
+        if (channelId === logId && failLogAfter) throw new Error('Timeout after closure record delivery');
         if (ch.topic.startsWith('ascendio-ticket-alerts:') && noticeFailure === 'after') throw new Error('Timeout after notice delivery');
         return m;
       },
@@ -106,7 +108,7 @@ async function fixture(t: TestContext) {
   for (const ch of channels.values()) ch.guild = guild;
   const client = { user: { id: botId }, guilds: { fetch: async () => guild }, channels: { fetch: async (id: string) => { if (!channels.has(id)) throw Object.assign(new Error('Unknown channel'), { code: 10003 }); return channels.get(id); } } } as unknown as Client;
   const tickets = new Tickets(client, guildId, store);
-  return { dir, config, store, tickets, client, guild, members, roles, channels, creates, threadCreates, sends, edits, setNoticeFailure: (value: typeof noticeFailure) => { noticeFailure = value; }, setFailGrant: (value: boolean) => { failGrant = value; }, setFailInvite: (value: boolean) => { failInvite = value; }, setUnknownCreate: () => { unknownCreate = true; }, setFailBeforeCreate: () => { failBeforeCreate = true; }, setFailLog: (value: boolean) => { failLog = value; } };
+  return { dir, config, store, tickets, client, guild, members, roles, channels, creates, threadCreates, sends, edits, setNoticeFailure: (value: typeof noticeFailure) => { noticeFailure = value; }, setFailGrant: (value: boolean) => { failGrant = value; }, setFailInvite: (value: boolean) => { failInvite = value; }, setUnknownCreate: () => { unknownCreate = true; }, setFailBeforeCreate: () => { failBeforeCreate = true; }, setFailLog: (value: boolean) => { failLog = value; }, setFailLogAfter: (value: boolean) => { failLogAfter = value; } };
 }
 
 test('restaurar canais preserva tópicos existentes e arquiva novos canais com registro e aviso no ticket', async t => {
@@ -132,7 +134,7 @@ test('restaurar canais preserva tópicos existentes e arquiva novos canais com r
   await f.tickets.close(opened.id, ch.id, outsiderId, 'Concluído');
   assert.equal(ch.parentId, closedId);
   assert.equal(ch.permissionsFor(f.members.get(outsiderId)).has(P.SendMessages), false);
-  assert.ok(f.sends.some(m => m.channelId === logId && m.body.content.includes(`<#${ch.id}>`)));
+  assert.ok(f.sends.some(m => m.channelId === logId && m.body.embeds[0].description.includes(`<#${ch.id}>`)));
 });
 
 test('doações menciona somente responsável individual autorizado e nunca o cargo ou everyone', async t => {
@@ -259,7 +261,7 @@ test('encerramento mantém histórico, bloqueia escrita e não herda a categoria
   for (const who of [ownerId, staffId]) { assert.equal(ch.permissionsFor(f.members.get(who)).has(P.ViewChannel), true); assert.equal(ch.permissionsFor(f.members.get(who)).has(P.SendMessages), false); }
   assert.equal(ch.permissionsFor(f.members.get(outsiderId)).has(P.ViewChannel), false);
   assert.equal(f.store.snapshot().tickets[0]!.status, 'closed');
-  assert.ok(f.sends.some(m => m.channelId === logId && m.body.content.includes(`<#${ticket.channelId}>`)));
+  assert.ok(f.sends.some(m => m.channelId === logId && m.body.embeds[0].description.includes(`<#${ticket.channelId}>`)));
   assert.equal(f.channels.has(ticket.channelId!), true);
   await assert.rejects(f.tickets.open(ownerId, 'doacoes', 'Outro', 'Descrição.'), /um minuto/);
 });
@@ -270,6 +272,40 @@ test('falha nos logs mantém fechamento pendente e reinício conclui sem perder 
   f.setFailLog(false); const reopened = new TicketStore(f.dir); await reopened.init();
   await new Tickets(f.client, guildId, reopened).recover();
   assert.equal(reopened.snapshot().tickets[0]!.status, 'closed'); assert.equal(f.sends.filter(m => m.channelId === logId).length, 1);
+});
+test('registro de encerramento usa card com assunto, equipe, histórico e menções silenciosas', () => {
+  const payload = closedTicketRecord({ id: 'a'.repeat(20), department: 'suporte', ownerId, closedBy: ownerId, claimedBy: staffId, subject: 'Ajuda @everyone', reason: 'Resolvido <@&923456789012345678>', closedAt: 1700000000000 }, panelId);
+  const embed = payload.embeds[0]!;
+  assert.equal(embed.title, '📤 Ticket encerrado'); assert.equal(embed.color, 0xe06767);
+  assert.ok(embed.description!.includes(`Solicitante: <@${ownerId}>`));
+  assert.ok(embed.description!.includes(`Atendido por: <@${staffId}>`));
+  assert.ok(embed.description!.includes(`Histórico preservado: <#${panelId}>`));
+  assert.ok(!embed.description!.includes('@everyone')); assert.ok(!embed.description!.includes('<@&'));
+  assert.equal(embed.footer!.text, `Ticket: ${'a'.repeat(20)} • Suporte`);
+  assert.equal(embed.timestamp, new Date(1700000000000).toISOString());
+  assert.deepEqual(payload.allowedMentions.parse, []);
+});
+
+test('timeout após enviar card de encerramento é recuperado sem duplicar o registro', async t => {
+  const f = await fixture(t); const ticket = await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.');
+  f.setFailLogAfter(true);
+  await assert.rejects(f.tickets.close(ticket.id, ticket.channelId!, ownerId, 'Resolvido'));
+  assert.equal(f.store.snapshot().tickets[0]!.status, 'closing');
+  f.setFailLogAfter(false);
+  const reopened = new TicketStore(f.dir); await reopened.init();
+  await new Tickets(f.client, guildId, reopened).recover();
+  assert.equal(reopened.snapshot().tickets[0]!.status, 'closed');
+  assert.equal(f.sends.filter(m => m.channelId === logId).length, 1);
+});
+
+test('recuperação reconhece registro antigo em texto sem enviar outro card', async t => {
+  const f = await fixture(t); const ticket = await f.tickets.open(ownerId, 'rp', 'Proposta', 'Descrição.');
+  f.setFailLog(true); await assert.rejects(f.tickets.close(ticket.id, ticket.channelId!, ownerId, 'Fim'));
+  f.setFailLog(false);
+  const old = await f.channels.get(logId)!.send({ content: `**Atendimento encerrado • Solicitar RP**\nTicket: ${ticket.id}\nHistórico preservado: <#${ticket.channelId}>` });
+  await f.tickets.recover();
+  assert.equal(f.store.snapshot().tickets[0]!.logMessageId, old.id);
+  assert.equal(f.sends.filter(m => m.channelId === logId).length, 1);
 });
 test('categoria de arquivo cheia mantém ticket encerrado sem excluir ou abrir permissões', async t => {
   const f = await fixture(t); const ticket = await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.');
