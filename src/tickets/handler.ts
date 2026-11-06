@@ -1,4 +1,4 @@
-import { MessageFlags, PermissionFlagsBits, type Interaction } from 'discord.js';
+import { ActionRowBuilder, MessageFlags, PermissionFlagsBits, UserSelectMenuBuilder, type Interaction } from 'discord.js';
 import { form } from '../components/forms.js';
 import { UserError } from '../validation/input.js';
 import type { Context } from '../commands/handler.js';
@@ -78,6 +78,13 @@ export async function ticketInteraction(i: Interaction, ctx: Context): Promise<v
       { id: 'description', label: 'Descreva o que você precisa', max: 1800, paragraph: true },
     ]));
   }
+  if (i.isUserSelectMenu() && i.customId.startsWith('ticket:invite:')) {
+    const [, , id, actorId] = i.customId.split(':');
+    if (actorId !== i.user.id || i.values.length !== 1) throw new UserError('Abra o botão Adicionar pessoa para escolher um participante.');
+    await i.deferUpdate();
+    const added = await tickets.addParticipant(id ?? '', i.channelId, i.user.id, i.values[0]!);
+    return void await i.editReply({ content: added ? `Pessoa adicionada: <@${i.values[0]}>. Ela já pode ler o histórico e conversar neste ticket.` : 'Essa pessoa já foi adicionada a este atendimento.', components: [], allowedMentions: { parse: [] } });
+  }
   if (i.isModalSubmit()) {
     await i.deferReply({ flags: MessageFlags.Ephemeral });
     const [, action, key, panel] = i.customId.split(':');
@@ -94,6 +101,13 @@ export async function ticketInteraction(i: Interaction, ctx: Context): Promise<v
   }
   if (i.isButton()) {
     const [, action, id] = i.customId.split(':');
+    if (action === 'add') {
+      await i.deferReply({ flags: MessageFlags.Ephemeral });
+      const { ticket } = await tickets.getAuthorized(id ?? '', i.channelId, i.user.id, true);
+      if (ticket.status !== 'open') throw new UserError('Só é possível adicionar pessoas a um atendimento em andamento.');
+      return void await i.editReply({ content: 'Escolha quem deve participar deste ticket. A pessoa terá acesso às mensagens anteriores e poderá conversar neste atendimento.',
+        components: [new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(new UserSelectMenuBuilder().setCustomId(`ticket:invite:${ticket.id}:${i.user.id}`).setPlaceholder('Pesquisar uma pessoa do servidor').setMinValues(1).setMaxValues(1))], allowedMentions: { parse: [] } });
+    }
     if (action === 'close') {
       const { ticket } = await tickets.getAuthorized(id ?? '', i.channelId, i.user.id);
       if (ticket.status === 'closed') throw new UserError('Este atendimento já foi encerrado.');

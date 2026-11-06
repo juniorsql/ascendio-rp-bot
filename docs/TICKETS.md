@@ -1,4 +1,12 @@
-# Central de atendimento — 1.3.10
+# Central de atendimento — 1.3.11
+
+## Adicionar pessoas ao atendimento
+
+O botão **Adicionar pessoa** aparece nos tickets abertos, inclusive nos atendimentos existentes após a atualização. Somente a equipe do setor ou um administrador que tenha acesso ao ticket pode usá-lo. O seletor é privado e permite pesquisar uma pessoa do servidor por vez. A autorização é conferida novamente ao selecionar.
+
+A pessoa adicionada pode ler o histórico e conversar naquele ticket. Não recebe cargo de equipe nem pode assumir, encerrar ou adicionar outras pessoas por esse convite. Ao encerrar um canal, mantém acesso somente para leitura; em tópicos antigos, o bloqueio do tópico impede novas mensagens. Não são enviadas mensagens diretas ou notificações de menção.
+
+Os participantes (máximo de 20 por ticket), a equipe que autorizou e a data ficam persistidos. Convites interrompidos são retomados sem duplicar o acesso, desde que a pessoa que autorizou ainda pertença à equipe e o ticket continue aberto. Os demais tickets, cargos e categorias mantêm os acessos anteriores.
 
 ## Painel de abertura
 

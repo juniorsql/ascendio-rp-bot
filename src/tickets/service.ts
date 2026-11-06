@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, ContainerBuilder, MessageFlags, PermissionFlagsBits as P, PermissionsBitField, SeparatorBuilder, StringSelectMenuBuilder, TextDisplayBuilder, type Client, type Guild, type GuildMember, type OverwriteResolvable, type TextChannel, type ThreadChannel } from 'discord.js';
 import { errorCode, log } from '../logs/logger.js';
-import { safeText, text, UserError } from '../validation/input.js';
+import { safeText, snowflake, text, UserError } from '../validation/input.js';
 import { departments, ticketLabels, TicketStore, validateTicketConfig, type Department, type Ticket, type TicketConfig } from './store.js';
 import { accessRole, assertHub, ensureHubs, findThread, grantHubAccess, threadName } from './thread-hubs.js';
 import { assertNotificationChannel, ensureNotificationChannels, openingNotice } from './notifications.js';
@@ -11,14 +11,14 @@ const none = { parse: [] as never[], repliedUser: false };
 const read = [P.ViewChannel, P.ReadMessageHistory];
 const write = [...read, P.SendMessages, P.EmbedLinks, P.AttachFiles, P.AddReactions];
 const never = [P.MentionEveryone, P.CreatePublicThreads, P.CreatePrivateThreads, P.SendMessagesInThreads];
-export function ticketOverwrites(guildId: string, botId: string, ownerId: string, roleIds: string[], closed = false): OverwriteResolvable[] {
-  if ([guildId, botId].includes(ownerId) || roleIds.includes(guildId) || roleIds.includes(botId)) throw new UserError('Participantes do ticket inválidos.');
+export function ticketOverwrites(guildId: string, botId: string, ownerId: string, roleIds: string[], closed = false, participantIds: string[] = []): OverwriteResolvable[] {
+  if ([guildId, botId].includes(ownerId) || roleIds.includes(guildId) || roleIds.includes(botId) || participantIds.some(id => [guildId, botId].includes(id))) throw new UserError('Participantes do ticket inválidos.');
   const allow = closed ? read : write;
   const deny = closed ? [...never, P.SendMessages, P.AddReactions] : never;
   return [
     { id: guildId, type: 0, deny: [P.ViewChannel, ...never] },
     ...[...new Set(roleIds)].map(id => ({ id, type: 0 as const, allow, deny })),
-    { id: ownerId, type: 1, allow, deny },
+    ...[...new Set([ownerId, ...participantIds])].map(id => ({ id, type: 1 as const, allow, deny })),
     { id: botId, type: 1, allow: [...write, P.ManageChannels, P.ManageRoles, P.MentionEveryone], deny: never.filter(p => p !== P.MentionEveryone) },
   ];
 }
@@ -30,6 +30,7 @@ export function ticketControls(t: Ticket) {
   return [new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(`ticket:claim:${t.id}`).setLabel(t.claimedBy ? 'Atendimento assumido' : 'Assumir atendimento').setStyle(ButtonStyle.Primary).setDisabled(closed || !!t.claimedBy),
     new ButtonBuilder().setCustomId(`ticket:close:${t.id}`).setLabel(closed ? 'Atendimento encerrado' : 'Encerrar ticket').setStyle(ButtonStyle.Secondary).setDisabled(closed),
+    new ButtonBuilder().setCustomId(`ticket:add:${t.id}`).setLabel('Adicionar pessoa').setEmoji('👤').setStyle(ButtonStyle.Secondary).setDisabled(closed),
   )];
 }
 export function ticketPanel(threads = false) {
@@ -50,7 +51,7 @@ function introduction(t: Ticket) {
   const status = t.status === 'closing' || t.status === 'closed' ? 'Encerrado' : t.claimedBy ? `Em atendimento por <@${t.claimedBy}>` : 'Aguardando a equipe';
   return {
     content: `<@${t.ownerId}>`, allowedMentions: none,
-    embeds: [{ color: 0xb49a61, title: `${ticketLabels[t.department].emoji} ${ticketLabels[t.department].label}`, description: `**${safeText(t.subject)}**\n\n${safeText(t.description)}`, fields: [{ name: 'Situação', value: status }, { name: 'Privacidade', value: 'Este canal é reservado ao solicitante e à equipe responsável. Não envie senhas ou tokens.' }] }],
+    embeds: [{ color: 0xb49a61, title: `${ticketLabels[t.department].emoji} ${ticketLabels[t.department].label}`, description: `**${safeText(t.subject)}**\n\n${safeText(t.description)}`, fields: [{ name: 'Situação', value: status }, { name: 'Privacidade', value: 'Este canal é reservado ao solicitante, às pessoas adicionadas e à equipe responsável. Não envie senhas ou tokens.' }, ...((t.participants ?? []).some(p => !p.pending) ? [{ name: 'Pessoas adicionadas', value: t.participants!.filter(p => !p.pending).map(p => `<@${p.userId}>`).join(', ') }] : [])] }],
     components: ticketControls(t),
   };
 }
@@ -73,7 +74,10 @@ export class Tickets {
     return ch;
   }
   async member(userId: string): Promise<GuildMember> {
-    const member = await (await this.guild()).members.fetch({ user: userId, force: true });
+    let member: GuildMember;
+    try { member = await (await this.guild()).members.fetch({ user: userId, force: true }); }
+    catch (error) { if ((error as { code?: number }).code === 10007) throw new UserError('Essa pessoa não está mais no servidor.'); throw error; }
+    if (!member) throw new UserError('Essa pessoa não está mais no servidor.');
     if (member.user.bot) throw new UserError('Bots não podem abrir ou assumir atendimentos.');
     return member;
   }
@@ -232,7 +236,7 @@ export class Tickets {
         const message = old ?? await ch.send({ ...introduction(t), nonce: t.id, enforceNonce: true });
         t.messageId = message.id;
       }
-      t.channelId = ch.id; t.status = 'open';
+      t.channelId = ch.id; t.status = 'open'; t.controlsVersion = 1;
       await this.store.transact(s => { Object.assign(s.tickets.find(r => r.id === t!.id)!, t); });
       log('ticket_opened', { userId: ownerId, channelId: ch.id });
       await this.notifyOpened(t.id);
@@ -295,6 +299,56 @@ export class Tickets {
     } else if (channel.type !== ChannelType.GuildText) throw new UserError('Canal do atendimento inválido.');
     return { ticket, channel, member };
   }
+  async addParticipant(id: string, channelId: string, actorId: string, userId: string): Promise<boolean> {
+    snowflake(userId, 'Pessoa');
+    return this.exclusive(`ticket:${id}`, async () => {
+      const { ticket } = await this.getAuthorized(id, channelId, actorId, true);
+      if (ticket.status !== 'open') throw new UserError('Só é possível adicionar pessoas a um atendimento em andamento.');
+      await this.member(userId);
+      if (userId === ticket.ownerId || userId === actorId) throw new UserError('Essa pessoa já participa do atendimento.');
+      const existing = ticket.participants?.find(p => p.userId === userId);
+      if (existing && !existing.pending) return false;
+      if (!existing && (ticket.participants?.length ?? 0) >= 20) throw new UserError('Este atendimento já possui 20 pessoas adicionadas.');
+      // Salva a autorização antes do Discord: um timeout pode ter aplicado o acesso.
+      await this.store.transact(s => {
+        const t = s.tickets.find(t => t.id === id)!;
+        t.participants ??= [];
+        const p = t.participants.find(p => p.userId === userId);
+        if (p) { p.addedBy = actorId; p.addedAt = Date.now(); }
+        else t.participants.push({ userId, addedBy: actorId, addedAt: Date.now(), pending: true });
+      });
+      await this.completeParticipant(id, userId);
+      return true;
+    });
+  }
+  private async completeParticipant(id: string, userId: string): Promise<void> {
+    const saved = this.store.snapshot().tickets.find(t => t.id === id);
+    const participant = saved?.participants?.find(p => p.userId === userId && p.pending);
+    if (!saved || !participant || saved.status !== 'open') return;
+    // Reconfere a equipe antes de completar convites interrompidos por falhas.
+    const { ticket, channel } = await this.getAuthorized(id, saved.channelId!, participant.addedBy, true);
+    const member = await this.member(userId);
+    if (channel.type === ChannelType.PrivateThread) {
+      const route = this.store.snapshot().config.routes[ticket.department];
+      if (route.parentChannelId !== ticket.parentChannelId) throw new UserError('A central antiga foi alterada. Confira o atendimento antes de adicionar pessoas.');
+      const parent = await this.textChannel(ticket.parentChannelId!);
+      assertHub(parent, this.guildId, this.client.user!.id, ticket.department, route);
+      await grantHubAccess(member, route, ticket.department);
+      if (channel.archived) await channel.setArchived(false, 'Adicionar participante ao atendimento em andamento');
+      await channel.members.add(userId);
+    } else if (channel.type === ChannelType.GuildText) {
+      await channel.permissionOverwrites.edit(userId, {
+        ViewChannel: true, ReadMessageHistory: true, SendMessages: true, EmbedLinks: true, AttachFiles: true, AddReactions: true,
+        MentionEveryone: false, CreatePublicThreads: false, CreatePrivateThreads: false, SendMessagesInThreads: false,
+      }, { reason: `Participante adicionado ao ticket pela equipe (${participant.addedBy})` });
+    } else throw new UserError('Canal de atendimento inválido.');
+    await this.store.transact(s => { delete s.tickets.find(t => t.id === id)!.participants!.find(p => p.userId === userId)!.pending; });
+    log('ticket_participant_added', { userId, channelId: channel.id, action: `addedBy:${participant.addedBy}` });
+    try {
+      const updated = this.store.snapshot().tickets.find(t => t.id === id)!;
+      if (updated.messageId) await (await channel.messages.fetch(updated.messageId)).edit(introduction(updated));
+    } catch (error) { log('ticket_participant_card_pending', { channelId: channel.id, code: errorCode(error) }, 'warn'); }
+  }
   async claim(id: string, channelId: string, actorId: string): Promise<void> {
     return this.exclusive(`ticket:${id}`, async () => {
       const { ticket, channel } = await this.getAuthorized(id, channelId, actorId, true);
@@ -331,7 +385,8 @@ export class Tickets {
     } else {
       if (channel.type !== ChannelType.GuildText) throw new UserError('Canal de atendimento inválido.');
       // Compatibilidade: canais antigos mantêm seu histórico e permissões.
-      await channel.edit({ name: `fechado-${ticket.department}-${ticket.id.slice(0, 6)}`, permissionOverwrites: ticketOverwrites(this.guildId, this.client.user!.id, ticket.ownerId, ticket.roleIds, true), reason: 'Encerramento de ticket com histórico preservado' });
+      const participants = ticket.participants?.filter(p => !p.pending || channel.permissionOverwrites.cache.get(p.userId)?.allow.has(P.ViewChannel)).map(p => p.userId);
+      await channel.edit({ name: `fechado-${ticket.department}-${ticket.id.slice(0, 6)}`, permissionOverwrites: ticketOverwrites(this.guildId, this.client.user!.id, ticket.ownerId, ticket.roleIds, true, participants), reason: 'Encerramento de ticket com histórico preservado' });
       const parent = await (await this.guild()).channels.fetch(c.closedCategoryId, { force: true });
       if (!parent || parent.type !== ChannelType.GuildCategory) throw new UserError('Categoria de arquivamento indisponível. O canal já foi bloqueado e o histórico foi preservado.');
       const allChannels = await (await this.guild()).channels.fetch();
@@ -374,5 +429,25 @@ export class Tickets {
       catch (e) { log('ticket_recovery_pending', { channelId: t.channelId, code: errorCode(e) }, 'warn'); }
     }
     for (const t of this.store.snapshot().tickets.filter(t => t.status === 'open' && ['pending', 'sending'].includes(t.notificationStatus ?? ''))) await this.notifyOpened(t.id);
+    for (const t of this.store.snapshot().tickets.filter(t => t.status === 'open')) {
+      for (const p of t.participants?.filter(p => p.pending) ?? []) {
+        try { await this.exclusive(`ticket:${t.id}`, () => this.completeParticipant(t.id, p.userId)); }
+        catch (error) { log('ticket_participant_pending', { channelId: t.channelId, code: errorCode(error) }, 'warn'); }
+      }
+      if (!t.controlsVersion && t.messageId) {
+        try {
+          await this.exclusive(`ticket:${t.id}`, async () => {
+            const current = this.store.snapshot().tickets.find(item => item.id === t.id)!;
+            if (current.status !== 'open' || current.controlsVersion) return;
+            const ch = await this.channel(current.channelId!);
+            const message = await ch.messages.fetch(current.messageId!);
+            if (message.author.id !== this.client.user!.id) throw new UserError('Os controles do ticket não pertencem a este bot.');
+            await message.edit({ components: ticketControls(current) });
+            await this.store.transact(s => { s.tickets.find(item => item.id === t.id)!.controlsVersion = 1; });
+            log('ticket_controls_updated', { channelId: ch.id, messageId: message.id });
+          });
+        } catch (error) { log('ticket_controls_update_failed', { channelId: t.channelId, code: errorCode(error) }, 'warn'); }
+      }
+    }
   }
 }

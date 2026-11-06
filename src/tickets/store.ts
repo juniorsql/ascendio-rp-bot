@@ -23,6 +23,8 @@ export interface Ticket {
   creationAttempted?: boolean;
   kind?: 'thread'; parentChannelId?: string;
   notificationStatus?: 'pending' | 'sending' | 'sent'; notificationChannelId?: string; notificationMessageId?: string;
+  participants?: { userId: string; addedBy: string; addedAt: number; pending?: boolean }[];
+  controlsVersion?: 1;
 }
 export interface TicketState { version: 1; config: TicketConfig; panelMessageId?: string; tickets: Ticket[] }
 export function ticketDefaults(): TicketConfig {
@@ -67,6 +69,16 @@ function validateState(s: TicketState): void {
     ids.add(t.id); snowflake(t.ownerId); department(t.department); snowflake(t.categoryId);
     if (!Array.isArray(t.roleIds) || t.roleIds.length > 10) throw new Error('Cargos inválidos.');
     for (const id of t.roleIds) snowflake(id);
+    if (t.controlsVersion !== undefined && t.controlsVersion !== 1) throw new Error('Controles de ticket inválidos.');
+    if (t.participants !== undefined) {
+      if (!Array.isArray(t.participants) || t.participants.length > 20) throw new Error('Participantes inválidos.');
+      const people = new Set<string>();
+      for (const p of t.participants) {
+        snowflake(p.userId); snowflake(p.addedBy);
+        if (p.userId === t.ownerId || people.has(p.userId) || !Number.isFinite(p.addedAt) || (p.pending !== undefined && typeof p.pending !== 'boolean')) throw new Error('Participante inválido.');
+        people.add(p.userId);
+      }
+    }
     for (const id of [t.channelId, t.messageId, t.claimedBy, t.closedBy, t.logMessageId]) if (id) snowflake(id);
     if (t.kind !== undefined && t.kind !== 'thread') throw new Error('Formato de ticket inválido.');
     if (t.parentChannelId) snowflake(t.parentChannelId);

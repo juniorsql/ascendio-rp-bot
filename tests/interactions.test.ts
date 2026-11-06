@@ -25,7 +25,7 @@ async function setup(t: { after: (fn: () => Promise<void>) => void }) {
   const ctx = { store, drafts: new Drafts(), env: { guildId }, client: { channels: { fetch: async () => channel } } } as unknown as Context;
   const interaction = (kind: Kind, options: Record<string, any> = {}): Interaction => {
     const i: any = { user: { id: userId }, guildId, guild, replied: false, deferred: false,
-      isChatInputCommand: () => kind === 'command', isButton: () => kind === 'button', isModalSubmit: () => kind === 'modal', isStringSelectMenu: () => kind === 'select', isRepliable: () => true, isFromMessage: () => false,
+      isChatInputCommand: () => kind === 'command', isButton: () => kind === 'button', isModalSubmit: () => kind === 'modal', isStringSelectMenu: () => kind === 'select', isUserSelectMenu: () => false, isRepliable: () => true, isFromMessage: () => false,
       reply: async (body: any) => { i.replied = true; replies.push(body); },
       editReply: async (body: any) => { replies.push(body); },
       followUp: async (body: any) => { replies.push(body); },
