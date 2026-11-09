@@ -1,4 +1,4 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, FileUploadBuilder, LabelBuilder, ModalBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { palette } from '../config/defaults.js';
 import type { Draft } from '../services/drafts.js';
 import { linkRows } from './link-buttons.js';
@@ -36,8 +36,17 @@ export function controls(draft: Draft) {
   const imagePosition = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId(`layout:${draft.id}`).setPlaceholder('Posição da imagem')
     .addOptions({ label: 'Imagem no topo', value: 'top', description: 'Banner acima do título e do texto', default: draft.post.imagePosition === 'top' },
       { label: 'Imagem embaixo', value: 'bottom', description: 'Imagem após o texto', default: draft.post.imagePosition !== 'top' }));
-  const closing = new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`closing:${draft.id}`).setLabel(draft.post.closingText ? 'Editar separador final' : 'Separador final').setStyle(ButtonStyle.Secondary));
+  const closing = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`closing:${draft.id}`).setLabel(draft.post.closingText ? 'Editar separador final' : 'Separador final').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`video:${draft.id}`).setLabel(draft.video ? 'Editar vídeo' : 'Adicionar vídeo').setStyle(ButtonStyle.Secondary),
+  );
   return [row, theme, imagePosition, closing, ...linkRows(draft.links)];
+}
+export function videoForm(draft: Draft): ModalBuilder {
+  const upload = new LabelBuilder().setLabel('Vídeo MP4 de até 15 MB')
+    .setFileUploadComponent(new FileUploadBuilder().setCustomId('video').setMinValues(draft.video ? 0 : 1).setMaxValues(1).setRequired(!draft.video));
+  if (draft.video) upload.setDescription('Anexe outro arquivo para substituir. Envie vazio para remover.');
+  return new ModalBuilder().setCustomId(`video:edit:${draft.id}`).setTitle('Vídeo da publicação').addLabelComponents(upload);
 }
 export function closingForm(draft: Draft): ModalBuilder {
   return form(`closing:edit:${draft.id}`, 'Separador final', [{ id: 'closing', label: 'Texto após a linha (vazio remove)', max: 1500, required: false, paragraph: true,

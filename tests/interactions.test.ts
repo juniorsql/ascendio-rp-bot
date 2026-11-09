@@ -9,6 +9,7 @@ import { onMemberAdd } from '../src/events/welcome.js';
 import { Drafts } from '../src/services/drafts.js';
 import { Store } from '../src/services/store.js';
 import { postEmbed } from '../src/templates/embeds.js';
+import { videoMaxBytes } from '../src/services/publication-video.js';
 const guildId = '123456789012345678', userId = '223456789012345678', channelId = '323456789012345678';
 type Kind = 'command' | 'button' | 'modal' | 'select';
 async function setup(t: { after: (fn: () => Promise<void>) => void }) {
@@ -41,6 +42,39 @@ async function setup(t: { after: (fn: () => Promise<void>) => void }) {
     botChannelBits = base | (bot ? PermissionFlagsBits.MentionEveryone : 0n);
   } };
 }
+test('vídeo na prévia preserva o banner e é publicado como anexo próprio', async t => {
+  const f = await setup(t);
+  const post = { kind: 'comunicado' as const, title: 'Trailer', description: 'Abertura', image: 'https://example.com/banner.png', thumbnail: '', fields: [], imagePosition: 'top' as const };
+  const d = f.ctx.drafts.create({ ownerId: userId, guildId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config) });
+  const url = 'https://cdn.discordapp.com/ephemeral-attachments/123/456/trailer.mp4?ex=abcdef';
+  const clip = Buffer.from('0000ftypmp42', 'ascii');
+  const download = t.mock.method(globalThis, 'fetch', async () => new Response(Uint8Array.from(clip)));
+  await onInteraction(f.interaction('button', { customId: `video:${d.id}` }), f.ctx);
+  const modal = f.replies.at(-1);
+  assert.equal(modal.components[0].component.type, 19);
+  const upload = (size: number, fileUrl = url) => f.interaction('modal', {
+    customId: modal.custom_id, isFromMessage: () => true,
+    fields: { getUploadedFiles: () => ({ first: () => ({ id: '456', name: 'trailer.mp4', url: fileUrl, size, contentType: 'video/mp4' }) }) },
+  });
+  await onInteraction(upload(videoMaxBytes + 1), f.ctx);
+  assert.match(f.replies.at(-1).content, /até 15 MB/);
+  await onInteraction(upload(clip.length, 'https://example.com/trailer.mp4'), f.ctx);
+  assert.equal(d.video, undefined);
+  await onInteraction(upload(clip.length), f.ctx);
+  const preview = f.replies.at(-1).components[1].toJSON();
+  assert.equal(preview.components[0].items[0].media.url, post.image);
+  assert.equal(preview.components.at(-1).items[0].media.url, url);
+  assert.equal(download.mock.callCount(), 0);
+  assert.equal(f.sent.length, 0);
+  await onInteraction(f.interaction('button', { customId: `confirm:${d.id}` }), f.ctx);
+  assert.equal(download.mock.callCount(), 1);
+  assert.equal(f.sent.length, 1);
+  const published = f.sent[0];
+  assert.deepEqual(published.files[0].attachment, clip);
+  assert.equal(published.components[0].toJSON().components.at(-1).items[0].media.url, `attachment://${published.files[0].name}`);
+  assert.deepEqual(published.allowedMentions.parse, []);
+});
+
 test('fluxo /anuncio → modal → prévia privada → confirmação envia embed uma vez', async t => {
   const f = await setup(t);
   await onInteraction(f.interaction('command', { commandName: 'anuncio' }), f.ctx);

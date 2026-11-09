@@ -1,7 +1,7 @@
 import { AttachmentBuilder, MessageFlags, PermissionFlagsBits, TextDisplayBuilder, type Client, type Interaction, type ChatInputCommandInteraction, type ModalSubmitInteraction } from 'discord.js';
 import type { Env } from '../config/env.js';
 import { kinds, palette, type Kind } from '../config/defaults.js';
-import { controls, form, postForm, linkForm, closingForm } from '../components/forms.js';
+import { controls, form, postForm, linkForm, closingForm, videoForm } from '../components/forms.js';
 import { errorCode, log } from '../logs/logger.js';
 import { Drafts, publish, publicationOptions, type Draft } from '../services/drafts.js';
 import { authorized, target, assertEveryonePermissions } from '../services/discord.js';
@@ -11,9 +11,11 @@ import { color, fields, imageUrl, safeText, text, urlButtons, UserError } from '
 import type { Tickets } from '../tickets/service.js';
 import { ticketInteraction } from '../tickets/handler.js';
 import { publicationCard } from '../components/publication-card.js';
+import { downloadPublicationVideo, publicationVideo } from '../services/publication-video.js';
 export interface Context { client: Client; env: Env; store: Store; drafts: Drafts; tickets?: Tickets }
 type Usable = ChatInputCommandInteraction | ModalSubmitInteraction | Extract<Interaction, { customId: string }>;
 const none = { parse: [] as never[], repliedUser: false };
+let videoPublicationInProgress = false;
 function kindOf(value: string): Kind {
   if (!(kinds as readonly string[]).includes(value)) throw new UserError('Tipo de publicação inválido.');
   return value as Kind;
@@ -46,7 +48,7 @@ async function changed(ctx: Context, userId: string, action: string, mutate: (co
 function preview(d: Draft) {
   const notification = d.notifyEveryone ? '**@everyone ATIVADO:** ao clicar em Publicar, a mensagem mencionará todos no canal de destino.' : 'Notificação @everyone: desativada.';
   const content = `**PRÉVIA PRIVADA** • Destino: <#${d.channelId}>\n${notification}\nBotões de URL: ${d.links.length}/5. Confira o conteúdo antes de publicar. Expira em 15 minutos a partir da criação.`;
-  if (d.layoutV2) return { content: null, embeds: [], flags: MessageFlags.IsComponentsV2 as const, components: [new TextDisplayBuilder().setContent(content), publicationCard(d.embeds, d.post?.imagePosition ?? 'bottom', content, d.post?.closingText), ...controls(d)], allowedMentions: none };
+  if (d.layoutV2) return { content: null, embeds: [], flags: MessageFlags.IsComponentsV2 as const, components: [new TextDisplayBuilder().setContent(content), publicationCard(d.embeds, d.post?.imagePosition ?? 'bottom', content, d.post?.closingText, d.video?.url), ...controls(d)], allowedMentions: none };
   return { content, embeds: d.embeds, components: controls(d), allowedMentions: none };
 }
 function completedPreview(d: Draft, content: string) {
@@ -149,6 +151,22 @@ async function handle(i: Interaction, ctx: Context) {
   }
   if (i.isModalSubmit()) {
     if (i.customId.startsWith('cfg:')) return configModal(i, ctx);
+    if (i.customId.startsWith('video:edit:')) {
+      const draft = ctx.drafts.get(i.customId.slice('video:edit:'.length), i.user.id, ctx.env.guildId);
+      if (!draft.post) throw new UserError('Use o vídeo em uma publicação personalizada.');
+      const file = i.fields.getUploadedFiles('video')?.first();
+      const video = file ? publicationVideo(file) : undefined;
+      const updated = { ...draft, video, layoutV2: draft.layoutV2 || !!video };
+      draft.busy = true;
+      try {
+        if (i.isFromMessage()) await i.deferUpdate(); else await i.deferReply({ flags: MessageFlags.Ephemeral });
+        await destination(i, ctx, draft.channelId);
+        const reply = await i.editReply(preview(updated));
+        draft.video = video;
+        draft.layoutV2 = updated.layoutV2;
+        return reply;
+      } finally { draft.busy = false; }
+    }
     if (i.customId.startsWith('closing:edit:')) {
       const draft = ctx.drafts.get(i.customId.slice('closing:edit:'.length), i.user.id, ctx.env.guildId);
       if (!draft.post) throw new UserError('O separador final está disponível nas publicações personalizadas.');
@@ -194,6 +212,7 @@ async function handle(i: Interaction, ctx: Context) {
   }
   const [action, id] = i.customId.split(':');
   const draft = ctx.drafts.get(id!, i.user.id, ctx.env.guildId);
+  if (i.isButton() && action === 'video' && draft.post) return i.showModal(videoForm(draft));
   if (i.isButton() && action === 'closing' && draft.post) return i.showModal(closingForm(draft));
   if (i.isButton() && action === 'links') return i.showModal(linkForm(draft));
   if (i.isButton() && action === 'edit') return i.showModal(postForm(`post:edit:${draft.id}`, draft));
@@ -214,16 +233,29 @@ async function handle(i: Interaction, ctx: Context) {
   if (i.isButton() && action === 'confirm') {
     // Trava antes da primeira espera: cancelar/editar não pode ultrapassar a confirmação.
     draft.busy = true;
+    let holdsVideoSlot = false;
     try {
       await i.deferUpdate();
-      const ch = await destination(i, ctx, draft.channelId);
+      let ch = await destination(i, ctx, draft.channelId);
+      let video: Buffer | undefined;
+      if (draft.video) {
+        const me = await ch.guild.members.fetchMe({ force: true });
+        if (!ch.permissionsFor(me)?.has(PermissionFlagsBits.AttachFiles)) throw new UserError('O bot precisa da permissão Anexar arquivos no canal de destino.');
+        if (videoPublicationInProgress) throw new UserError('Outro vídeo está sendo publicado. Aguarde alguns instantes e tente novamente.');
+        videoPublicationInProgress = holdsVideoSlot = true;
+        video = await downloadPublicationVideo(draft.video);
+        ch = await destination(i, ctx, draft.channelId);
+      }
       if (draft.notifyEveryone) await assertEveryonePermissions(ch, await currentMember(i, ctx));
       draft.busy = false;
-      const messageId = await publish(draft, ctx.store, (_embeds, nonce) => ch.send(publicationOptions(draft, nonce)));
+      const messageId = await publish(draft, ctx.store, (_embeds, nonce) => ch.send(publicationOptions(draft, nonce, video)));
       ctx.drafts.remove(draft.id);
       await audit(ctx, i.user.id, draft.notifyEveryone ? 'publication_sent_everyone' : 'publication_sent', ch.id, messageId);
       return i.editReply(completedPreview(draft, `Publicação enviada: https://discord.com/channels/${ctx.env.guildId}/${ch.id}/${messageId}`));
-    } finally { draft.busy = false; }
+    } finally {
+      if (holdsVideoSlot) videoPublicationInProgress = false;
+      draft.busy = false;
+    }
   }
   await i.deferUpdate();
   ctx.drafts.get(draft.id, i.user.id, ctx.env.guildId);

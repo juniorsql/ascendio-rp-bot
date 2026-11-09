@@ -1,7 +1,7 @@
 import { ContainerBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder, SectionBuilder, SeparatorBuilder, TextDisplayBuilder, ThumbnailBuilder, type APIEmbed } from 'discord.js';
 import { imageUrl, safeText, text, UserError, validateEmbeds } from '../validation/input.js';
 
-export function publicationCard(embeds: APIEmbed[], imagePosition: 'top' | 'bottom', surroundingText = '', closingText = '') {
+export function publicationCard(embeds: APIEmbed[], imagePosition: 'top' | 'bottom', surroundingText = '', closingText = '', videoUrl?: string) {
   if (embeds.length !== 1) throw new UserError('Escolha a posição da imagem em uma publicação individual.');
   validateEmbeds(embeds);
   const embed = embeds[0]!;
@@ -22,5 +22,6 @@ export function publicationCard(embeds: APIEmbed[], imagePosition: 'top' | 'bott
   if (body) card.addTextDisplayComponents(new TextDisplayBuilder().setContent(body));
   if (closing) card.addSeparatorComponents(new SeparatorBuilder().setDivider(true)).addTextDisplayComponents(new TextDisplayBuilder().setContent(closing));
   if (imagePosition === 'bottom') addImage();
+  if (videoUrl) card.addMediaGalleryComponents(new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(videoUrl)));
   return card;
 }

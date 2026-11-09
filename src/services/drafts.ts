@@ -5,14 +5,15 @@ import { linkRows } from '../components/link-buttons.js';
 import { publicationCard } from '../components/publication-card.js';
 import type { Post } from '../templates/embeds.js';
 import type { Store } from './store.js';
-export interface Draft { id: string; ownerId: string; guildId: string; channelId: string; expiresAt: number; post?: Post; embeds: APIEmbed[]; links: UrlButton[]; layoutV2: boolean; busy: boolean; notifyEveryone: boolean }
+import { videoFilename, type PublicationVideo } from './publication-video.js';
+export interface Draft { id: string; ownerId: string; guildId: string; channelId: string; expiresAt: number; post?: Post; embeds: APIEmbed[]; links: UrlButton[]; video?: PublicationVideo; layoutV2: boolean; busy: boolean; notifyEveryone: boolean }
 export class Drafts {
   private items = new Map<string, Draft>();
   constructor(private now = () => Date.now()) {}
   create(input: Omit<Draft, 'id' | 'expiresAt' | 'busy' | 'notifyEveryone' | 'links' | 'layoutV2'> & { links?: UrlButton[] }): Draft {
     this.sweep();
     if (this.items.size >= 100 || [...this.items.values()].filter(d => d.ownerId === input.ownerId).length >= 5) throw new UserError('Limite de rascunhos. Cancele uma prévia ou aguarde 15 minutos.');
-    const draft = { ...input, links: validateUrlButtons(input.links ?? []), layoutV2: input.post?.imagePosition === 'top' || !!input.post?.closingText?.trim(), id: randomUUID(), expiresAt: this.now() + 15 * 60_000, busy: false, notifyEveryone: false };
+    const draft = { ...input, links: validateUrlButtons(input.links ?? []), layoutV2: input.post?.imagePosition === 'top' || !!input.post?.closingText?.trim() || !!input.video, id: randomUUID(), expiresAt: this.now() + 15 * 60_000, busy: false, notifyEveryone: false };
     this.items.set(draft.id, draft); return draft;
   }
   get(id: string, ownerId: string, guildId: string): Draft {
@@ -31,12 +32,15 @@ export function fingerprint(d: Draft): string {
   const links = validateUrlButtons(d.links);
   const parts: unknown[] = links.length ? [d.guildId, d.channelId, embeds, links] : [d.guildId, d.channelId, embeds];
   if (d.layoutV2) parts.push({ layout: 'card', imagePosition: d.post?.imagePosition ?? 'bottom', ...(d.post?.closingText ? { closingText: d.post.closingText } : {}) });
+  if (d.video) parts.push({ video: d.video.id });
   return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 }
-export function publicationOptions(draft: Draft, nonce: string): MessageCreateOptions {
+export function publicationOptions(draft: Draft, nonce: string, video?: Buffer): MessageCreateOptions {
+  if (draft.video && !video) throw new UserError('O vídeo precisa estar disponível antes de publicar.');
   if (draft.layoutV2) return {
     flags: MessageFlags.IsComponentsV2,
-    components: [...(draft.notifyEveryone ? [new TextDisplayBuilder().setContent('@everyone')] : []), publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : '', draft.post?.closingText), ...linkRows(draft.links)],
+    components: [...(draft.notifyEveryone ? [new TextDisplayBuilder().setContent('@everyone')] : []), publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : '', draft.post?.closingText, video ? `attachment://${videoFilename}` : undefined), ...linkRows(draft.links)],
+    ...(video ? { files: [{ attachment: video, name: videoFilename }] } : {}),
     nonce, enforceNonce: true,
     allowedMentions: { parse: draft.notifyEveryone ? ['everyone'] : [], users: [], roles: [], repliedUser: false },
   };
