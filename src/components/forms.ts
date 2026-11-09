@@ -43,7 +43,7 @@ export function controls(draft: Draft) {
   return [row, theme, imagePosition, closing, ...linkRows(draft.links)];
 }
 export function videoForm(draft: Draft): ModalBuilder {
-  const upload = new LabelBuilder().setLabel('Vídeo MP4 de até 15 MB')
+  const upload = new LabelBuilder().setLabel('Vídeo MP4 ou MOV de até 15 MB')
     .setFileUploadComponent(new FileUploadBuilder().setCustomId('video').setMinValues(draft.video ? 0 : 1).setMaxValues(1).setRequired(!draft.video));
   if (draft.video) upload.setDescription('Anexe outro arquivo para substituir. Envie vazio para remover.');
   return new ModalBuilder().setCustomId(`video:edit:${draft.id}`).setTitle('Vídeo da publicação').addLabelComponents(upload);

@@ -5,7 +5,7 @@ import { linkRows } from '../components/link-buttons.js';
 import { publicationCard } from '../components/publication-card.js';
 import type { Post } from '../templates/embeds.js';
 import type { Store } from './store.js';
-import { videoFilename, type PublicationVideo } from './publication-video.js';
+import type { PublicationVideo } from './publication-video.js';
 export interface Draft { id: string; ownerId: string; guildId: string; channelId: string; expiresAt: number; post?: Post; embeds: APIEmbed[]; links: UrlButton[]; video?: PublicationVideo; layoutV2: boolean; busy: boolean; notifyEveryone: boolean }
 export class Drafts {
   private items = new Map<string, Draft>();
@@ -37,10 +37,11 @@ export function fingerprint(d: Draft): string {
 }
 export function publicationOptions(draft: Draft, nonce: string, video?: Buffer): MessageCreateOptions {
   if (draft.video && !video) throw new UserError('O vídeo precisa estar disponível antes de publicar.');
+  const filename = draft.video ? `ascendio-video.${draft.video.format}` : undefined;
   if (draft.layoutV2) return {
     flags: MessageFlags.IsComponentsV2,
-    components: [...(draft.notifyEveryone ? [new TextDisplayBuilder().setContent('@everyone')] : []), publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : '', draft.post?.closingText, video ? `attachment://${videoFilename}` : undefined), ...linkRows(draft.links)],
-    ...(video ? { files: [{ attachment: video, name: videoFilename }] } : {}),
+    components: [...(draft.notifyEveryone ? [new TextDisplayBuilder().setContent('@everyone')] : []), publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : '', draft.post?.closingText, filename ? `attachment://${filename}` : undefined), ...linkRows(draft.links)],
+    ...(video && filename ? { files: [{ attachment: video, name: filename }] } : {}),
     nonce, enforceNonce: true,
     allowedMentions: { parse: draft.notifyEveryone ? ['everyone'] : [], users: [], roles: [], repliedUser: false },
   };

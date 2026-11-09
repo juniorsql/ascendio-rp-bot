@@ -75,6 +75,31 @@ test('vídeo na prévia preserva o banner e é publicado como anexo próprio', a
   assert.deepEqual(published.allowedMentions.parse, []);
 });
 
+test('vídeo MOV mantém a extensão no anexo e aceita QuickTime sem ftyp', async t => {
+  const f = await setup(t);
+  const post = { kind: 'comunicado' as const, title: 'Trailer', description: 'Abertura', image: '', thumbnail: '', fields: [] };
+  const draft = f.ctx.drafts.create({ ownerId: userId, guildId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config) });
+  const url = 'https://cdn.discordapp.com/ephemeral-attachments/123/457/trailer.MOV';
+  // Cabeçalhos QuickTime de teste com os átomos de metadados e mídia.
+  const clip = Buffer.from('\x00\x00\x00\x09moov\x00\x00\x00\x00\x09mdat\x00', 'latin1');
+  let bytes = Buffer.alloc(clip.length);
+  t.mock.method(globalThis, 'fetch', async () => new Response(Uint8Array.from(bytes)));
+  await onInteraction(f.interaction('modal', {
+    customId: `video:edit:${draft.id}`, isFromMessage: () => true,
+    fields: { getUploadedFiles: () => ({ first: () => ({ id: '457', name: 'trailer.MOV', url, size: clip.length, contentType: 'video/quicktime' }) }) },
+  }), f.ctx);
+  assert.equal(f.replies.at(-1).components[1].toJSON().components.at(-1).items[0].media.url, url);
+  await onInteraction(f.interaction('button', { customId: `confirm:${draft.id}` }), f.ctx);
+  assert.match(f.replies.at(-1).content, /MOV válido/);
+  assert.equal(f.ctx.store.snapshot().receipts.length, 0);
+  bytes = clip;
+  await onInteraction(f.interaction('button', { customId: `confirm:${draft.id}` }), f.ctx);
+  assert.equal(f.sent.length, 1);
+  assert.deepEqual(f.sent[0].files[0].attachment, clip);
+  assert.equal(f.sent[0].files[0].name, 'ascendio-video.mov');
+  assert.equal(f.sent[0].components[0].toJSON().components.at(-1).items[0].media.url, 'attachment://ascendio-video.mov');
+});
+
 test('fluxo /anuncio → modal → prévia privada → confirmação envia embed uma vez', async t => {
   const f = await setup(t);
   await onInteraction(f.interaction('command', { commandName: 'anuncio' }), f.ctx);

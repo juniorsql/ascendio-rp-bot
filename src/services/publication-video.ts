@@ -2,21 +2,51 @@ import type { Attachment } from 'discord.js';
 import { UserError } from '../validation/input.js';
 
 export const videoMaxBytes = 15_000_000;
-export const videoFilename = 'ascendio-video.mp4';
-export type PublicationVideo = Pick<Attachment, 'id' | 'url' | 'size'>;
+export type PublicationVideo = Pick<Attachment, 'id' | 'url' | 'size'> & { format: 'mp4' | 'mov' };
 
 export function publicationVideo(file: Attachment): PublicationVideo {
   const url = new URL(file.url);
   if (url.origin !== 'https://cdn.discordapp.com' || !/^\/(?:ephemeral-)?attachments\/\d+\/\d+\//.test(url.pathname)) {
-    throw new UserError('Envie o MP4 pelo campo de arquivo do Discord.');
+    throw new UserError('Envie o vídeo pelo campo de arquivo do Discord.');
   }
-  if (!/\.mp4$/i.test(file.name) || (file.contentType && file.contentType !== 'video/mp4')) {
-    throw new UserError('Escolha um vídeo no formato MP4.');
+  const format = file.name?.match(/\.(mp4|mov)$/i)?.[1]?.toLowerCase();
+  if (format !== 'mp4' && format !== 'mov') {
+    throw new UserError('Escolha um vídeo no formato MP4 ou MOV.');
+  }
+  const acceptedTypes = format === 'mov' ? ['video/quicktime', 'video/mp4', 'application/octet-stream'] : ['video/mp4'];
+  if (file.contentType && !acceptedTypes.includes(file.contentType)) {
+    throw new UserError('Escolha um vídeo no formato MP4 ou MOV.');
   }
   if (!Number.isSafeInteger(file.size) || file.size < 12 || file.size > videoMaxBytes) {
-    throw new UserError('Envie um vídeo MP4 de até 15 MB.');
+    throw new UserError('Envie um vídeo MP4 ou MOV de até 15 MB.');
   }
-  return { id: file.id, url: file.url, size: file.size };
+  return { id: file.id, url: file.url, size: file.size, format };
+}
+
+function hasQuickTimeMovie(data: Buffer): boolean {
+  let hasMovie = false;
+  let hasMedia = false;
+  for (let offset = 0; offset < data.length;) {
+    const remaining = data.length - offset;
+    if (remaining < 8) return false;
+    let size = data.readUInt32BE(offset);
+    const type = data.toString('latin1', offset + 4, offset + 8);
+    let header = 8;
+    if (size === 1) {
+      header = 16;
+      if (remaining < header) return false;
+      const extendedSize = data.readBigUInt64BE(offset + 8);
+      if (extendedSize > BigInt(remaining)) return false;
+      size = Number(extendedSize);
+    } else if (size === 0) {
+      size = remaining;
+    }
+    if (size < header || size > remaining) return false;
+    if (type === 'moov' && size > header) hasMovie = true;
+    if (type === 'mdat' && size > header) hasMedia = true;
+    offset += size;
+  }
+  return hasMovie && hasMedia;
 }
 
 export async function downloadPublicationVideo(video: PublicationVideo): Promise<Buffer> {
@@ -39,7 +69,8 @@ export async function downloadPublicationVideo(video: PublicationVideo): Promise
       reader.releaseLock();
     }
     if (offset !== data.length) throw new Error('Incomplete video');
-    if (data.toString('ascii', 4, 8) !== 'ftyp') throw new UserError('O arquivo não parece ser um MP4 válido. Exporte o vídeo como MP4 e tente novamente.');
+    const valid = video.format === 'mov' ? hasQuickTimeMovie(data) : data.toString('ascii', 4, 8) === 'ftyp';
+    if (!valid) throw new UserError(`O arquivo não parece ser um ${video.format.toUpperCase()} válido. Exporte o vídeo novamente e tente de novo.`);
     return data;
   } catch (error) {
     if (error instanceof UserError) throw error;
