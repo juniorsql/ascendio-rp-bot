@@ -15,6 +15,21 @@ async function main(): Promise<void> {
   const env = loadEnv();
   const store = new Store(env.dataDir);
   await store.init({ welcomeChannelId: env.welcomeChannelId, logChannelId: env.logChannelId, adminRoleIds: env.adminRoleIds });
+  if (process.env.WELCOME_MESSAGE_CONFIG) {
+    const welcome: unknown = JSON.parse(process.env.WELCOME_MESSAGE_CONFIG);
+    if (!welcome || typeof welcome !== 'object' || !('title' in welcome) || !('text' in welcome) || typeof welcome.title !== 'string' || typeof welcome.text !== 'string') {
+      throw new Error('WELCOME_MESSAGE_CONFIG inválido. Informe title e text.');
+    }
+    const { title, text } = welcome;
+    if (store.snapshot().config.welcomeTitle !== title || store.snapshot().config.welcomeText !== text) {
+      await store.transact(state => {
+        state.config.welcomeTitle = title;
+        state.config.welcomeText = text;
+        state.audit.push({ time: Date.now(), action: 'welcome_message_configured', userId: env.clientId });
+      });
+      log('welcome_message_configured', { guildId: env.guildId });
+    }
+  }
   const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
     allowedMentions: { parse: [], repliedUser: false },
