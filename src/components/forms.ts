@@ -39,8 +39,15 @@ export function controls(draft: Draft) {
   const closing = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(`closing:${draft.id}`).setLabel(draft.post.closingText ? 'Editar separador final' : 'Separador final').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`video:${draft.id}`).setLabel(draft.video ? 'Editar vídeo' : 'Adicionar vídeo').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`youtube:${draft.id}`).setLabel(draft.youtube ? 'Editar YouTube' : 'YouTube').setStyle(ButtonStyle.Secondary),
   );
   return [row, theme, imagePosition, closing, ...linkRows(draft.links)];
+}
+export function youtubeForm(draft: Draft): ModalBuilder {
+  return form(`youtube:edit:${draft.id}`, 'Vídeo do YouTube', [{
+    id: 'youtube', label: 'Link do vídeo (vazio remove)', max: 2048, required: false,
+    placeholder: 'https://www.youtube.com/watch?v=...', value: draft.youtube,
+  }]);
 }
 export function videoForm(draft: Draft): ModalBuilder {
   const upload = new LabelBuilder().setLabel('Vídeo MP4 ou MOV de até 15 MB')

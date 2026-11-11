@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { ChannelType, MessageFlags, PermissionFlagsBits, PermissionsBitField, type Interaction, type GuildMember } from 'discord.js';
 import { onInteraction, type Context } from '../src/commands/handler.js';
 import { onMemberAdd } from '../src/events/welcome.js';
-import { Drafts } from '../src/services/drafts.js';
+import { Drafts, fingerprint } from '../src/services/drafts.js';
+import { youtubeUrl } from '../src/validation/youtube.js';
 import { Store } from '../src/services/store.js';
 import { postEmbed } from '../src/templates/embeds.js';
 import { videoMaxBytes } from '../src/services/publication-video.js';
@@ -42,6 +43,69 @@ async function setup(t: { after: (fn: () => Promise<void>) => void }) {
     botChannelBits = base | (bot ? PermissionFlagsBits.MentionEveryone : 0n);
   } };
 }
+test('links do YouTube normalizam vídeos, Shorts e lives e recusam destinos falsos', () => {
+  const expected = 'https://www.youtube.com/watch?v=abcdefghijk';
+  for (const link of ['https://youtu.be/abcdefghijk?si=tracking', 'https://www.youtube.com/watch?v=abcdefghijk&list=abc', 'https://m.youtube.com/shorts/abcdefghijk', 'https://youtube.com/live/abcdefghijk', 'https://www.youtube.com/embed/abcdefghijk']) assert.equal(youtubeUrl(link), expected);
+  assert.equal(youtubeUrl('https://youtu.be/abcdefghijk?t=30'), expected + '&t=30');
+  assert.equal(youtubeUrl(' '), '');
+  for (const link of ['http://youtube.com/watch?v=abcdefghijk', 'https://youtube.com.example.com/watch?v=abcdefghijk', 'https://user:pass@youtube.com/watch?v=abcdefghijk', 'https://youtube.com/playlist?list=abcdefghijk', 'https://youtube.com/watch?v=short', 'https://youtube.com:444/watch?v=abcdefghijk', 'not a link']) assert.throws(() => youtubeUrl(link));
+});
+
+test('YouTube passa pelo botão e prévia e publica link nativo abaixo do card sem menção extra', async t => {
+  const f = await setup(t);
+  const post = { kind: 'comunicado' as const, title: 'Trailer', description: 'Nossa história', image: 'https://example.com/banner.png', thumbnail: '', fields: [], imagePosition: 'top' as const };
+  const draft = f.ctx.drafts.create({ ownerId: userId, guildId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config) });
+  const original = fingerprint(draft);
+  await onInteraction(f.interaction('button', { customId: `youtube:${draft.id}` }), f.ctx);
+  assert.equal(f.replies.at(-1).custom_id, `youtube:edit:${draft.id}`);
+  const modal = (value: string) => f.interaction('modal', { customId: `youtube:edit:${draft.id}`, isFromMessage: () => true, fields: { getTextInputValue: () => value } });
+  await onInteraction(modal('https://example.com/watch?v=abcdefghijk'), f.ctx);
+  assert.equal(draft.youtube, undefined);
+  await onInteraction(modal('https://youtu.be/abcdefghijk?si=tracking'), f.ctx);
+  assert.notEqual(fingerprint(draft), original);
+  const preview = f.replies.at(-1);
+  assert.equal(preview.flags, MessageFlags.IsComponentsV2);
+  assert.equal(preview.components[1].toJSON().components[0].items[0].media.url, post.image);
+  assert.equal(preview.components[2].toJSON().components[0].items[0].media.url, 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg');
+  assert.equal(f.sent.length, 0);
+  await onInteraction(f.interaction('button', { customId: `confirm:${draft.id}` }), f.ctx);
+  assert.equal(f.sent.length, 2);
+  assert.equal(f.sent[0].flags, MessageFlags.IsComponentsV2);
+  assert.equal(f.sent[1].content, 'https://www.youtube.com/watch?v=abcdefghijk');
+  assert.equal(f.sent[1].embeds, undefined); assert.equal(f.sent[1].flags, undefined);
+  assert.deepEqual(f.sent[1].allowedMentions.parse, []);
+  assert.notEqual(f.sent[0].nonce, f.sent[1].nonce);
+  assert.equal(f.sent[1].enforceNonce, true);
+  assert.equal(f.ctx.store.snapshot().receipts[0]!.status, 'sent');
+  assert.ok(f.ctx.store.snapshot().receipts[0]!.youtubeMessageId);
+});
+
+test('falha no YouTube mantém registro do card e impede republicação duplicada', async t => {
+  const f = await setup(t);
+  const post = { kind: 'comunicado' as const, title: 'Trailer', description: 'Nossa história', image: '', thumbnail: '', fields: [] };
+  const draft = f.ctx.drafts.create({ ownerId: userId, guildId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config), youtube: 'https://www.youtube.com/watch?v=abcdefghijk' });
+  const send = f.channel.send;
+  f.channel.send = async (body: any) => { if (body.content === draft.youtube) throw new Error('Unknown outcome'); return send(body); };
+  await onInteraction(f.interaction('button', { customId: `confirm:${draft.id}` }), f.ctx);
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.ctx.store.snapshot().receipts[0]!.status, 'sending');
+  assert.ok(f.ctx.store.snapshot().receipts[0]!.messageId);
+  assert.match(f.replies.at(-1).content, /O card foi enviado/);
+  await onInteraction(f.interaction('button', { customId: `confirm:${draft.id}` }), f.ctx);
+  assert.equal(f.sent.length, 1); assert.equal(draft.busy, false);
+});
+
+test('YouTube remove link e mantém rascunho anterior se a prévia falhar', async t => {
+  const f = await setup(t);
+  const post = { kind: 'comunicado' as const, title: 'Trailer', description: 'Nossa história', image: '', thumbnail: '', fields: [] };
+  const draft = f.ctx.drafts.create({ ownerId: userId, guildId, channelId, post, embeds: postEmbed(post, f.ctx.store.snapshot().config), youtube: 'https://www.youtube.com/watch?v=abcdefghijk' });
+  await onInteraction(f.interaction('modal', { customId: `youtube:edit:${draft.id}`, isFromMessage: () => true, fields: { getTextInputValue: () => '' }, editReply: async () => { throw new Error('Preview failed'); } }), f.ctx);
+  assert.ok(draft.youtube); assert.equal(draft.busy, false);
+  await onInteraction(f.interaction('modal', { customId: `youtube:edit:${draft.id}`, isFromMessage: () => true, fields: { getTextInputValue: () => '' } }), f.ctx);
+  assert.equal(draft.youtube, ''); assert.equal(draft.layoutV2, true);
+  assert.equal(f.sent.length, 0);
+});
+
 test('vídeo na prévia preserva o banner e é publicado como anexo próprio', async t => {
   const f = await setup(t);
   const post = { kind: 'comunicado' as const, title: 'Trailer', description: 'Abertura', image: 'https://example.com/banner.png', thumbnail: '', fields: [], imagePosition: 'top' as const };

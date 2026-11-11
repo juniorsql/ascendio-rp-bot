@@ -6,14 +6,15 @@ import { publicationCard } from '../components/publication-card.js';
 import type { Post } from '../templates/embeds.js';
 import type { Store } from './store.js';
 import type { PublicationVideo } from './publication-video.js';
-export interface Draft { id: string; ownerId: string; guildId: string; channelId: string; expiresAt: number; post?: Post; embeds: APIEmbed[]; links: UrlButton[]; video?: PublicationVideo; layoutV2: boolean; busy: boolean; notifyEveryone: boolean }
+import { youtubeUrl } from '../validation/youtube.js';
+export interface Draft { id: string; ownerId: string; guildId: string; channelId: string; expiresAt: number; post?: Post; embeds: APIEmbed[]; links: UrlButton[]; video?: PublicationVideo; youtube?: string; layoutV2: boolean; busy: boolean; notifyEveryone: boolean }
 export class Drafts {
   private items = new Map<string, Draft>();
   constructor(private now = () => Date.now()) {}
   create(input: Omit<Draft, 'id' | 'expiresAt' | 'busy' | 'notifyEveryone' | 'links' | 'layoutV2'> & { links?: UrlButton[] }): Draft {
     this.sweep();
     if (this.items.size >= 100 || [...this.items.values()].filter(d => d.ownerId === input.ownerId).length >= 5) throw new UserError('Limite de rascunhos. Cancele uma prévia ou aguarde 15 minutos.');
-    const draft = { ...input, links: validateUrlButtons(input.links ?? []), layoutV2: input.post?.imagePosition === 'top' || !!input.post?.closingText?.trim() || !!input.video, id: randomUUID(), expiresAt: this.now() + 15 * 60_000, busy: false, notifyEveryone: false };
+    const draft = { ...input, links: validateUrlButtons(input.links ?? []), layoutV2: input.post?.imagePosition === 'top' || !!input.post?.closingText?.trim() || !!input.video || !!input.youtube, id: randomUUID(), expiresAt: this.now() + 15 * 60_000, busy: false, notifyEveryone: false };
     this.items.set(draft.id, draft); return draft;
   }
   get(id: string, ownerId: string, guildId: string): Draft {
@@ -33,6 +34,7 @@ export function fingerprint(d: Draft): string {
   const parts: unknown[] = links.length ? [d.guildId, d.channelId, embeds, links] : [d.guildId, d.channelId, embeds];
   if (d.layoutV2) parts.push({ layout: 'card', imagePosition: d.post?.imagePosition ?? 'bottom', ...(d.post?.closingText ? { closingText: d.post.closingText } : {}) });
   if (d.video) parts.push({ video: d.video.id });
+  if (d.youtube) parts.push({ youtube: youtubeUrl(d.youtube) });
   return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 }
 export function publicationOptions(draft: Draft, nonce: string, video?: Buffer): MessageCreateOptions {
@@ -51,10 +53,12 @@ export function publicationOptions(draft: Draft, nonce: string, video?: Buffer):
     allowedMentions: { parse: draft.notifyEveryone ? ['everyone'] : [], users: [], roles: [], repliedUser: false },
   };
 }
-export async function publish(draft: Draft, store: Store, send: (embeds: APIEmbed[], nonce: string) => Promise<{ id: string }>): Promise<string> {
+export async function publish(draft: Draft, store: Store, send: (embeds: APIEmbed[], nonce: string) => Promise<{ id: string }>, sendYouTube?: (url: string, nonce: string) => Promise<{ id: string }>): Promise<string> {
   if (draft.busy) throw new UserError('Publicação em processamento.');
   validateEmbeds(draft.embeds);
   validateUrlButtons(draft.links);
+  const youtube = youtubeUrl(draft.youtube ?? '');
+  if (youtube && !sendYouTube) throw new UserError('O envio do vídeo do YouTube precisa estar configurado.');
   if (draft.layoutV2) publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : '', draft.post?.closingText);
   draft.busy = true;
   const key = fingerprint(draft);
@@ -68,13 +72,28 @@ export async function publish(draft: Draft, store: Store, send: (embeds: APIEmbe
     reserved = true;
     // Nonce com no máximo 25 caracteres e reserva persistida antes da chamada externa.
     const message = await send(draft.embeds, createHash('sha256').update(draft.id).digest('hex').slice(0, 24));
+    let youtubeMessageId: string | undefined;
+    if (youtube) {
+      await store.transact(state => {
+        state.receipts.find(r => r.draftId === draft.id)!.messageId = message.id;
+        state.audit.push({ time: Date.now(), action: 'publication_card_sent', userId: draft.ownerId, channelId: draft.channelId, messageId: message.id });
+      });
+      const linkedVideo = await sendYouTube!(youtube, createHash('sha256').update(`youtube:${draft.id}`).digest('hex').slice(0, 24));
+      youtubeMessageId = linkedVideo.id;
+    }
     await store.transact(state => {
       const receipt = state.receipts.find(r => r.draftId === draft.id)!;
       receipt.status = 'sent'; receipt.messageId = message.id;
+      if (youtubeMessageId) {
+        receipt.youtubeMessageId = youtubeMessageId;
+        state.audit.push({ time: Date.now(), action: 'publication_youtube_sent', userId: draft.ownerId, channelId: draft.channelId, messageId: youtubeMessageId });
+      }
       state.audit.push({ time: Date.now(), action: draft.notifyEveryone ? 'publication_sent_everyone' : 'publication_sent', userId: draft.ownerId, channelId: draft.channelId, messageId: message.id });
     });
     return message.id;
   } catch (error) {
+    const receipt = store.snapshot().receipts.find(r => r.draftId === draft.id);
+    if (reserved && youtube && receipt?.messageId) throw new UserError(`O card foi enviado. Confira também se o link do YouTube chegou ao canal antes de tentar novamente. Publicação: https://discord.com/channels/${draft.guildId}/${draft.channelId}/${receipt.messageId}. Consulte /configurar historico.`);
     if (reserved) throw new UserError('O resultado do envio precisa ser conferido no canal. A reserva foi mantida para evitar duplicidade; consulte /configurar historico.');
     throw error;
   } finally { draft.busy = false; }
