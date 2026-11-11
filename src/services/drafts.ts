@@ -42,7 +42,7 @@ export function publicationOptions(draft: Draft, nonce: string, video?: Buffer):
   const filename = draft.video ? `ascendio-video.${draft.video.format}` : undefined;
   if (draft.layoutV2) return {
     flags: MessageFlags.IsComponentsV2,
-    components: [...(draft.notifyEveryone ? [new TextDisplayBuilder().setContent('@everyone')] : []), publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : '', draft.post?.closingText, filename ? `attachment://${filename}` : undefined), ...linkRows(draft.links)],
+    components: [...(draft.notifyEveryone ? [new TextDisplayBuilder().setContent('@everyone')] : []), publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : '', draft.post?.closingText, filename ? `attachment://${filename}` : undefined, draft.youtube), ...linkRows(draft.links)],
     ...(video && filename ? { files: [{ attachment: video, name: filename }] } : {}),
     nonce, enforceNonce: true,
     allowedMentions: { parse: draft.notifyEveryone ? ['everyone'] : [], users: [], roles: [], repliedUser: false },
@@ -53,13 +53,11 @@ export function publicationOptions(draft: Draft, nonce: string, video?: Buffer):
     allowedMentions: { parse: draft.notifyEveryone ? ['everyone'] : [], users: [], roles: [], repliedUser: false },
   };
 }
-export async function publish(draft: Draft, store: Store, send: (embeds: APIEmbed[], nonce: string) => Promise<{ id: string }>, sendYouTube?: (url: string, nonce: string) => Promise<{ id: string }>): Promise<string> {
+export async function publish(draft: Draft, store: Store, send: (embeds: APIEmbed[], nonce: string) => Promise<{ id: string }>): Promise<string> {
   if (draft.busy) throw new UserError('Publicação em processamento.');
   validateEmbeds(draft.embeds);
   validateUrlButtons(draft.links);
-  const youtube = youtubeUrl(draft.youtube ?? '');
-  if (youtube && !sendYouTube) throw new UserError('O envio do vídeo do YouTube precisa estar configurado.');
-  if (draft.layoutV2) publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : '', draft.post?.closingText);
+  if (draft.layoutV2) publicationCard(draft.embeds, draft.post?.imagePosition ?? 'bottom', draft.notifyEveryone ? '@everyone' : '', draft.post?.closingText, undefined, draft.youtube);
   draft.busy = true;
   const key = fingerprint(draft);
   let reserved = false;
@@ -72,28 +70,13 @@ export async function publish(draft: Draft, store: Store, send: (embeds: APIEmbe
     reserved = true;
     // Nonce com no máximo 25 caracteres e reserva persistida antes da chamada externa.
     const message = await send(draft.embeds, createHash('sha256').update(draft.id).digest('hex').slice(0, 24));
-    let youtubeMessageId: string | undefined;
-    if (youtube) {
-      await store.transact(state => {
-        state.receipts.find(r => r.draftId === draft.id)!.messageId = message.id;
-        state.audit.push({ time: Date.now(), action: 'publication_card_sent', userId: draft.ownerId, channelId: draft.channelId, messageId: message.id });
-      });
-      const linkedVideo = await sendYouTube!(youtube, createHash('sha256').update(`youtube:${draft.id}`).digest('hex').slice(0, 24));
-      youtubeMessageId = linkedVideo.id;
-    }
     await store.transact(state => {
       const receipt = state.receipts.find(r => r.draftId === draft.id)!;
       receipt.status = 'sent'; receipt.messageId = message.id;
-      if (youtubeMessageId) {
-        receipt.youtubeMessageId = youtubeMessageId;
-        state.audit.push({ time: Date.now(), action: 'publication_youtube_sent', userId: draft.ownerId, channelId: draft.channelId, messageId: youtubeMessageId });
-      }
       state.audit.push({ time: Date.now(), action: draft.notifyEveryone ? 'publication_sent_everyone' : 'publication_sent', userId: draft.ownerId, channelId: draft.channelId, messageId: message.id });
     });
     return message.id;
   } catch (error) {
-    const receipt = store.snapshot().receipts.find(r => r.draftId === draft.id);
-    if (reserved && youtube && receipt?.messageId) throw new UserError(`O card foi enviado. Confira também se o link do YouTube chegou ao canal antes de tentar novamente. Publicação: https://discord.com/channels/${draft.guildId}/${draft.channelId}/${receipt.messageId}. Consulte /configurar historico.`);
     if (reserved) throw new UserError('O resultado do envio precisa ser conferido no canal. A reserva foi mantida para evitar duplicidade; consulte /configurar historico.');
     throw error;
   } finally { draft.busy = false; }

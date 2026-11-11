@@ -12,7 +12,7 @@ import type { Tickets } from '../tickets/service.js';
 import { ticketInteraction } from '../tickets/handler.js';
 import { publicationCard } from '../components/publication-card.js';
 import { downloadPublicationVideo, publicationVideo } from '../services/publication-video.js';
-import { youtubeUrl, youtubeThumbnail } from '../validation/youtube.js';
+import { youtubeUrl } from '../validation/youtube.js';
 export interface Context { client: Client; env: Env; store: Store; drafts: Drafts; tickets?: Tickets }
 type Usable = ChatInputCommandInteraction | ModalSubmitInteraction | Extract<Interaction, { customId: string }>;
 const none = { parse: [] as never[], repliedUser: false };
@@ -49,17 +49,7 @@ async function changed(ctx: Context, userId: string, action: string, mutate: (co
 function preview(d: Draft) {
   const notification = d.notifyEveryone ? '**@everyone ATIVADO:** ao clicar em Publicar, a mensagem mencionará todos no canal de destino.' : 'Notificação @everyone: desativada.';
   const content = `**PRÉVIA PRIVADA** • Destino: <#${d.channelId}>\n${notification}\nBotões de URL: ${d.links.length}/5. Confira o conteúdo antes de publicar. Expira em 15 minutos a partir da criação.`;
-  if (d.youtube) {
-    const title = 'YouTube';
-    const description = `O link com a prévia do YouTube será publicado em uma mensagem logo abaixo da postagem.\n\n${youtubeUrl(d.youtube)}`;
-    const youtubeCard = publicationCard([{ title, description, image: { url: youtubeThumbnail(d.youtube) } }], 'top');
-    return { content: null, embeds: [], flags: MessageFlags.IsComponentsV2 as const, components: [
-      new TextDisplayBuilder().setContent(content),
-      publicationCard(d.embeds, d.post?.imagePosition ?? 'bottom', content + title + description + '## ', d.post?.closingText, d.video?.url),
-      youtubeCard, ...controls(d),
-    ], allowedMentions: none };
-  }
-  if (d.layoutV2) return { content: null, embeds: [], flags: MessageFlags.IsComponentsV2 as const, components: [new TextDisplayBuilder().setContent(content), publicationCard(d.embeds, d.post?.imagePosition ?? 'bottom', content, d.post?.closingText, d.video?.url), ...controls(d)], allowedMentions: none };
+  if (d.layoutV2) return { content: null, embeds: [], flags: MessageFlags.IsComponentsV2 as const, components: [new TextDisplayBuilder().setContent(content), publicationCard(d.embeds, d.post?.imagePosition ?? 'bottom', content, d.post?.closingText, d.video?.url, d.youtube), ...controls(d)], allowedMentions: none };
   return { content, embeds: d.embeds, components: controls(d), allowedMentions: none };
 }
 function completedPreview(d: Draft, content: string) {
@@ -275,14 +265,7 @@ async function handle(i: Interaction, ctx: Context) {
       }
       if (draft.notifyEveryone) await assertEveryonePermissions(ch, await currentMember(i, ctx));
       draft.busy = false;
-      const messageId = await publish(
-        draft, ctx.store,
-        (_embeds, nonce) => ch.send(publicationOptions(draft, nonce, video)),
-        async (url, nonce) => {
-          const destinationChannel = await destination(i, ctx, draft.channelId);
-          return destinationChannel.send({ content: url, nonce, enforceNonce: true, allowedMentions: none });
-        },
-      );
+      const messageId = await publish(draft, ctx.store, (_embeds, nonce) => ch.send(publicationOptions(draft, nonce, video)));
       ctx.drafts.remove(draft.id);
       await audit(ctx, i.user.id, draft.notifyEveryone ? 'publication_sent_everyone' : 'publication_sent', ch.id, messageId);
       return i.editReply(completedPreview(draft, `Publicação enviada: https://discord.com/channels/${ctx.env.guildId}/${ch.id}/${messageId}`));
