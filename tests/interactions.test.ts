@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ChannelType, MessageFlags, PermissionFlagsBits, PermissionsBitField, type Interaction, type GuildMember } from 'discord.js';
+import { ChannelType, MessageFlags, OverwriteType, PermissionFlagsBits, PermissionsBitField, type Interaction, type GuildMember } from 'discord.js';
 import { onInteraction, type Context } from '../src/commands/handler.js';
 import { onMemberAdd } from '../src/events/welcome.js';
 import { onMemberRemove } from '../src/events/departures.js';
@@ -62,6 +62,30 @@ test('saídas persistem e o comando entrega o registro apenas ao dono, em respos
   assert.equal(f.replies.at(-1).flags, MessageFlags.Ephemeral);
   assert.match(f.replies.at(-1).content, new RegExp(memberId));
   assert.equal(f.sent.length, 0);
+});
+
+test('avisos de saída só são enviados enquanto o canal está restrito', async t => {
+  const f = await setup(t);
+  const memberId = '523456789012345678';
+  const botId = '623456789012345678';
+  Object.assign(f.ctx.env, { clientId: botId, departureChannelId: channelId });
+  const view = PermissionFlagsBits.ViewChannel;
+  const overwrite = (id: string, type: OverwriteType, allow: bigint, deny: bigint) =>
+    ({ id, type, allow: new PermissionsBitField(allow), deny: new PermissionsBitField(deny) });
+  const overwrites = new Map([
+    [guildId, overwrite(guildId, OverwriteType.Role, 0n, view)],
+    [botId, overwrite(botId, OverwriteType.Member, view, 0n)],
+  ]);
+  Object.assign(f.channel, { permissionOverwrites: { cache: overwrites } });
+  const member = { id: memberId, user: { username: 'aluna_de_hogwarts', bot: false }, guild: { id: guildId } } as GuildMember;
+  await onMemberRemove(member, f.ctx);
+  assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0].embeds[0].description, new RegExp(memberId));
+  assert.deepEqual(f.sent[0].allowedMentions, { parse: [] });
+  overwrites.set(userId, overwrite(userId, OverwriteType.Role, view, 0n));
+  await onMemberRemove(member, f.ctx);
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.ctx.store.snapshot().departures?.length, 2);
 });
 
 test('links do YouTube normalizam vídeos, Shorts e lives e recusam destinos falsos', () => {
