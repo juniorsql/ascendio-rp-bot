@@ -6,6 +6,9 @@ const channels = [ChannelType.GuildText, ChannelType.GuildAnnouncement] as const
 const admin = (name: string, description: string, config = false) => new SlashCommandBuilder().setName(name).setDescription(description).setContexts(InteractionContextType.Guild)
   .setDefaultMemberPermissions(config ? PermissionFlagsBits.ManageGuild : PermissionFlagsBits.ManageMessages);
 export const commands = [
+  new SlashCommandBuilder().setName('saidas').setDescription('Consulte o registro privado de saídas do servidor.')
+    .setContexts(InteractionContextType.Guild).setDefaultMemberPermissions(0)
+    .addIntegerOption(o => o.setName('pagina').setDescription('Página do registro').setMinValue(1)),
   new SlashCommandBuilder().setName('atendimentos').setDescription('Veja os tickets abertos da sua equipe.').setContexts(InteractionContextType.Guild),
   admin('ticket', 'Configure e publique a central de atendimento.', true)
     .addSubcommand(s => s.setName('tradicional').setDescription('Volte aos canais individuais, preservando os tickets existentes.'))

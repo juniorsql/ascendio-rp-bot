@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { ChannelType, MessageFlags, PermissionFlagsBits, PermissionsBitField, type Interaction, type GuildMember } from 'discord.js';
 import { onInteraction, type Context } from '../src/commands/handler.js';
 import { onMemberAdd } from '../src/events/welcome.js';
+import { onMemberRemove } from '../src/events/departures.js';
 import { Drafts, fingerprint } from '../src/services/drafts.js';
 import { youtubeUrl } from '../src/validation/youtube.js';
 import { Store } from '../src/services/store.js';
@@ -43,6 +44,26 @@ async function setup(t: { after: (fn: () => Promise<void>) => void }) {
     botChannelBits = base | (bot ? PermissionFlagsBits.MentionEveryone : 0n);
   } };
 }
+test('saídas persistem e o comando entrega o registro apenas ao dono, em resposta privada', async t => {
+  const f = await setup(t);
+  const memberId = '523456789012345678';
+  const member = { id: memberId, user: { username: 'aluna_de_hogwarts', bot: false }, guild: { id: guildId } } as GuildMember;
+  await onMemberRemove(member, f.ctx);
+  const reopened = new Store(f.ctx.store.dir);
+  await reopened.init();
+  f.ctx.store = reopened;
+  const command = (ownerId: string) => f.interaction('command', {
+    commandName: 'saidas', guild: { id: guildId, ownerId }, options: { getInteger: () => null },
+  });
+  await onInteraction(command(memberId), f.ctx);
+  assert.match(f.replies.at(-1).content, /privada para o dono/);
+  assert.doesNotMatch(f.replies.at(-1).content, new RegExp(memberId));
+  await onInteraction(command(userId), f.ctx);
+  assert.equal(f.replies.at(-1).flags, MessageFlags.Ephemeral);
+  assert.match(f.replies.at(-1).content, new RegExp(memberId));
+  assert.equal(f.sent.length, 0);
+});
+
 test('links do YouTube normalizam vídeos, Shorts e lives e recusam destinos falsos', () => {
   const expected = 'https://www.youtube.com/watch?v=abcdefghijk';
   for (const link of ['https://youtu.be/abcdefghijk?si=tracking', 'https://www.youtube.com/watch?v=abcdefghijk&list=abc', 'https://m.youtube.com/shorts/abcdefghijk', 'https://youtube.com/live/abcdefghijk', 'https://www.youtube.com/embed/abcdefghijk']) assert.equal(youtubeUrl(link), expected);

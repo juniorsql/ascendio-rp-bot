@@ -133,7 +133,7 @@ test('restaurar canais preserva tópicos existentes e arquiva novos canais com r
   await f.tickets.enableChannels();
   assert.equal(f.store.snapshot().config.mode, 'channel');
   assert.deepEqual(f.store.snapshot().tickets, before);
-  await f.tickets.close(old.id, old.channelId!, ownerId, 'Fim');
+  await f.tickets.close(old.id, old.channelId!, staffId, 'Fim');
   assert.equal(f.channels.get(old.channelId!)!.archived, true);
   const opened = await f.tickets.open(outsiderId, 'rp', 'Novo', 'Canal individual.');
   const ch = f.channels.get(opened.channelId!)!;
@@ -146,7 +146,7 @@ test('restaurar canais preserva tópicos existentes e arquiva novos canais com r
   await new Tickets(f.client, guildId, reopened).recover();
   assert.equal(reopened.snapshot().config.mode, 'channel');
   assert.equal(f.sends.filter(m => m.channelId === ch.id && m.body.content?.includes('Novo atendimento')).length, 1);
-  await f.tickets.close(opened.id, ch.id, outsiderId, 'Concluído');
+  await f.tickets.close(opened.id, ch.id, staffId, 'Concluído');
   assert.equal(ch.parentId, closedId);
   assert.equal(ch.permissionsFor(f.members.get(outsiderId)).has(P.SendMessages), false);
   assert.ok(f.sends.some(m => m.channelId === logId && m.body.embeds[0].description.includes(`<#${ch.id}>`)));
@@ -259,7 +259,7 @@ test('equipe adiciona pessoa só ao próprio ticket e fechamento preserva leitur
   const message = await ch.messages.fetch(a.messageId!);
   assert.ok(message.embeds[0].fields.some((field: any) => field.name === 'Pessoas adicionadas' && field.value.includes(outsiderId)));
   assert.deepEqual(f.edits.at(-1).allowedMentions.parse, []);
-  await f.tickets.close(a.id, ch.id, ownerId, 'Resolvido.');
+  await f.tickets.close(a.id, ch.id, staffId, 'Resolvido.');
   assert.equal(ch.permissionsFor(f.members.get(outsiderId)).has([P.ViewChannel, P.ReadMessageHistory]), true);
   assert.equal(ch.permissionsFor(f.members.get(outsiderId)).has(P.SendMessages), false);
   assert.equal(ticketControls(f.store.snapshot().tickets.find(t => t.id === a.id)!)[0]!.toJSON().components[2]!.disabled, true);
@@ -277,7 +277,7 @@ test('adicionar exige equipe atual, canal correto, pessoa humana no servidor e t
   f.members.get(staffId)!.roles.cache.clear();
   await assert.rejects(f.tickets.addParticipant(a.id, a.channelId!, staffId, outsiderId), /restrita/);
   f.members.get(staffId)!.roles.cache.set(roleId, {});
-  await f.tickets.close(a.id, a.channelId!, ownerId, 'Fim');
+  await f.tickets.close(a.id, a.channelId!, staffId, 'Fim');
   await assert.rejects(f.tickets.addParticipant(a.id, a.channelId!, staffId, outsiderId), /em andamento/);
 });
 
@@ -308,7 +308,7 @@ test('convite pendente não concede acesso se a equipe perdeu autorização e n�
   const ch = f.channels.get(a.channelId!)!;
   assert.equal(ch.permissionsFor(f.members.get(outsiderId)).has(P.ViewChannel), false);
   f.members.get(staffId)!.roles.cache.set(roleId, {});
-  await f.tickets.close(a.id, a.channelId!, ownerId, 'Fim');
+  await f.tickets.close(a.id, a.channelId!, staffId, 'Fim');
   await f.tickets.recover();
   assert.equal(f.store.snapshot().tickets[0]!.status, 'closed');
   assert.equal(ch.permissionsFor(f.members.get(outsiderId)).has(P.ViewChannel), false);
@@ -319,10 +319,10 @@ test('adicionar e encerrar usam o mesmo bloqueio e não deixam permissão de esc
   const f = await fixture(t); const a = await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.');
   const results = await Promise.allSettled([
     f.tickets.addParticipant(a.id, a.channelId!, staffId, outsiderId),
-    f.tickets.close(a.id, a.channelId!, ownerId, 'Fim'),
+    f.tickets.close(a.id, a.channelId!, staffId, 'Fim'),
   ]);
   assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
-  await f.tickets.close(a.id, a.channelId!, ownerId, 'Fim');
+  await f.tickets.close(a.id, a.channelId!, staffId, 'Fim');
   assert.equal(f.channels.get(a.channelId!)!.permissionsFor(f.members.get(outsiderId)).has(P.SendMessages), false);
 });
 
@@ -350,7 +350,7 @@ test('convite em tópico privado mantém acesso restrito à conversa escolhida',
   assert.equal(f.channels.get(a.channelId!)!.permissionsFor(member).has(P.ViewChannel), true);
   assert.equal(f.channels.get(b.channelId!)!.permissionsFor(member).has(P.ViewChannel), false);
   assert.equal(f.channels.get(a.channelId!)!.invitable, false);
-  await f.tickets.close(a.id, a.channelId!, ownerId, 'Fim');
+  await f.tickets.close(a.id, a.channelId!, staffId, 'Fim');
   assert.equal(f.channels.get(a.channelId!)!.locked, true);
 });
 
@@ -383,7 +383,7 @@ test('botão abre seletor privado e escolha passa pelo roteador com revalidaçã
 
 test('seletor antigo não adiciona ninguém depois do encerramento', async t => {
   const f = await fixture(t); const a = await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.');
-  await f.tickets.close(a.id, a.channelId!, ownerId, 'Fim');
+  await f.tickets.close(a.id, a.channelId!, staffId, 'Fim');
   const replies: any[] = [];
   const i: any = { guildId, guild: f.guild, channelId: a.channelId, user: { id: staffId }, customId: `ticket:invite:${a.id}:${staffId}`, values: [outsiderId],
     isChatInputCommand: () => false, isModalSubmit: () => false, isButton: () => false, isStringSelectMenu: () => false, isUserSelectMenu: () => true, isRepliable: () => true,
@@ -434,6 +434,7 @@ test('somente equipe assume; perda do cargo e usuário de outro ticket são bloq
   const f = await fixture(t); const ticket = await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.');
   await assert.rejects(f.tickets.claim(ticket.id, ticket.channelId!, ownerId), /restrita/);
   await assert.rejects(f.tickets.close(ticket.id, ticket.channelId!, outsiderId, 'Fechar'), /restrita/);
+  await assert.rejects(f.tickets.close(ticket.id, ticket.channelId!, ownerId, 'Fechar'), /restrita à equipe/);
   await assert.rejects(f.tickets.getAuthorized(ticket.id, panelId, ownerId), /não encontrado/);
   await f.tickets.claim(ticket.id, ticket.channelId!, staffId); assert.equal(f.store.snapshot().tickets[0]!.claimedBy, staffId);
   f.members.get(staffId)!.roles.cache.clear();
@@ -441,7 +442,7 @@ test('somente equipe assume; perda do cargo e usuário de outro ticket são bloq
 });
 test('encerramento mantém histórico, bloqueia escrita e não herda a categoria de arquivo', async t => {
   const f = await fixture(t); const ticket = await f.tickets.open(ownerId, 'doacoes', 'Doação', 'Informações.');
-  await f.tickets.close(ticket.id, ticket.channelId!, ownerId, 'Resolvido @everyone');
+  await f.tickets.close(ticket.id, ticket.channelId!, staffId, 'Resolvido @everyone');
   const ch = f.channels.get(ticket.channelId!)!;
   assert.equal(ch.parentId, closedId);
   for (const who of [ownerId, staffId]) { assert.equal(ch.permissionsFor(f.members.get(who)).has(P.ViewChannel), true); assert.equal(ch.permissionsFor(f.members.get(who)).has(P.SendMessages), false); }
@@ -453,7 +454,7 @@ test('encerramento mantém histórico, bloqueia escrita e não herda a categoria
 });
 test('falha nos logs mantém fechamento pendente e reinício conclui sem perder canal', async t => {
   const f = await fixture(t); const ticket = await f.tickets.open(ownerId, 'rp', 'Proposta', 'Descrição.'); f.setFailLog(true);
-  await assert.rejects(f.tickets.close(ticket.id, ticket.channelId!, ownerId, 'Concluído'));
+  await assert.rejects(f.tickets.close(ticket.id, ticket.channelId!, staffId, 'Concluído'));
   assert.equal(f.store.snapshot().tickets[0]!.status, 'closing');
   f.setFailLog(false); const reopened = new TicketStore(f.dir); await reopened.init();
   await new Tickets(f.client, guildId, reopened).recover();
@@ -475,7 +476,7 @@ test('registro de encerramento usa card com assunto, equipe, histórico e menç�
 test('timeout após enviar card de encerramento é recuperado sem duplicar o registro', async t => {
   const f = await fixture(t); const ticket = await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.');
   f.setFailLogAfter(true);
-  await assert.rejects(f.tickets.close(ticket.id, ticket.channelId!, ownerId, 'Resolvido'));
+  await assert.rejects(f.tickets.close(ticket.id, ticket.channelId!, staffId, 'Resolvido'));
   assert.equal(f.store.snapshot().tickets[0]!.status, 'closing');
   f.setFailLogAfter(false);
   const reopened = new TicketStore(f.dir); await reopened.init();
@@ -486,7 +487,7 @@ test('timeout após enviar card de encerramento é recuperado sem duplicar o reg
 
 test('recuperação reconhece registro antigo em texto sem enviar outro card', async t => {
   const f = await fixture(t); const ticket = await f.tickets.open(ownerId, 'rp', 'Proposta', 'Descrição.');
-  f.setFailLog(true); await assert.rejects(f.tickets.close(ticket.id, ticket.channelId!, ownerId, 'Fim'));
+  f.setFailLog(true); await assert.rejects(f.tickets.close(ticket.id, ticket.channelId!, staffId, 'Fim'));
   f.setFailLog(false);
   const old = await f.channels.get(logId)!.send({ content: `**Atendimento encerrado • Solicitar RP**\nTicket: ${ticket.id}\nHistórico preservado: <#${ticket.channelId}>` });
   await f.tickets.recover();
@@ -496,7 +497,7 @@ test('recuperação reconhece registro antigo em texto sem enviar outro card', a
 test('categoria de arquivo cheia mantém ticket encerrado sem excluir ou abrir permissões', async t => {
   const f = await fixture(t); const ticket = await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.');
   for (let n = 0; n < 50; n++) f.channels.set(`dummy${n}`, { parentId: closedId });
-  await f.tickets.close(ticket.id, ticket.channelId!, ownerId, 'Fim');
+  await f.tickets.close(ticket.id, ticket.channelId!, staffId, 'Fim');
   assert.equal(f.store.snapshot().tickets[0]!.status, 'closed'); assert.equal(f.channels.get(ticket.channelId!)!.parentId, ticket.categoryId);
 });
 test('estado inválido não é sobrescrito e seed não apaga configuração após reiniciar', async t => {
@@ -542,7 +543,7 @@ test('tópicos privados preservam isolamento e fecham arquivados sem excluir ou 
   assert.equal(thread.permissionsFor(f.members.get(staffId)).has(P.ManageThreads), true);
   const parentId = thread.parentId;
   await f.tickets.claim(opened.id, thread.id, staffId); assert.equal(thread.memberIds.has(staffId), false);
-  await f.tickets.close(opened.id, thread.id, ownerId, 'Resolvido.');
+  await f.tickets.close(opened.id, thread.id, staffId, 'Resolvido.');
   assert.equal(thread.archived, true); assert.equal(thread.locked, true); assert.equal(thread.parentId, parentId);
   assert.equal(f.channels.has(thread.id), true); assert.equal(f.creates.length, 8); assert.equal(f.threadCreates.length, 1);
   assert.equal(f.store.snapshot().tickets[0]!.status, 'closed');
@@ -589,7 +590,7 @@ test('criação incerta reencontra tópico privado arquivado sem duplicá-lo', a
 test('falha no registro deixa tópico bloqueado; recuperação conclui sem apagar histórico', async t => {
   const f = await fixture(t); await f.tickets.enableThreads();
   const opened = await f.tickets.open(ownerId, 'suporte', 'Ajuda', 'Descrição.'); f.setFailLog(true);
-  await assert.rejects(f.tickets.close(opened.id, opened.channelId!, ownerId, 'Fim'));
+  await assert.rejects(f.tickets.close(opened.id, opened.channelId!, staffId, 'Fim'));
   const thread = f.channels.get(opened.channelId!)!; assert.equal(thread.archived, true); assert.equal(thread.locked, true);
   assert.equal(f.store.snapshot().tickets[0]!.status, 'closing');
   f.setFailLog(false); await f.tickets.recover(); assert.equal(f.store.snapshot().tickets[0]!.status, 'closed');
@@ -597,7 +598,7 @@ test('falha no registro deixa tópico bloqueado; recuperação conclui sem apaga
 });
 test('tickets antigos continuam encerrando como canais após ativar tópicos', async t => {
   const f = await fixture(t); const old = await f.tickets.open(ownerId, 'suporte', 'Antigo', 'Descrição.');
-  await f.tickets.enableThreads(); await f.tickets.close(old.id, old.channelId!, ownerId, 'Fim');
+  await f.tickets.enableThreads(); await f.tickets.close(old.id, old.channelId!, staffId, 'Fim');
   assert.equal(f.channels.get(old.channelId!)!.type, ChannelType.GuildText); assert.equal(f.channels.get(old.channelId!)!.parentId, closedId);
   assert.equal(f.store.snapshot().tickets[0]!.status, 'closed');
 });
@@ -635,7 +636,7 @@ test('cargo de acesso compartilhado não permite ver o tópico de outro solicita
 test('encerramento e reinício preservam acesso ao histórico sem liberar demais setores', async t => {
   const f = await fixture(t); await f.tickets.enableThreads();
   const opened = await f.tickets.open(ownerId, 'doacoes', 'Doação', 'Descrição.');
-  await f.tickets.close(opened.id, opened.channelId!, ownerId, 'Fim');
+  await f.tickets.close(opened.id, opened.channelId!, staffId, 'Fim');
   const access = f.store.snapshot().config.routes.doacoes.accessRoleId!;
   const rolesBefore = f.roles.size;
   const reopened = new TicketStore(f.dir); await reopened.init();
@@ -656,7 +657,7 @@ test('falha ao atribuir cargo não cria tópico e reserva permite nova tentativa
 test('migração preserva participantes de tópicos arquivados sem reabrir ou excluir', async t => {
   const f = await fixture(t); await f.tickets.enableThreads();
   const opened = await f.tickets.open(ownerId, 'suporte', 'Antigo', 'Descrição.');
-  await f.tickets.close(opened.id, opened.channelId!, ownerId, 'Fim');
+  await f.tickets.close(opened.id, opened.channelId!, staffId, 'Fim');
   const access = f.store.snapshot().config.routes.suporte.accessRoleId!;
   f.members.get(ownerId)!.roles.cache.delete(access);
   await f.store.transact(s => { delete s.config.routes.suporte.accessRoleId; });
@@ -724,7 +725,7 @@ test('tickets antigos não geram avisos retroativos e reserva incerta não é re
   const f = await fixture(t); const old = await f.tickets.open(ownerId, 'suporte', 'Anterior', 'Descrição.');
   await f.tickets.enableThreads(); await f.tickets.recover();
   assert.equal(f.sends.filter(m => m.body.nonce?.startsWith('open')).length, 0);
-  await f.tickets.close(old.id, old.channelId!, ownerId, 'Fim');
+  await f.tickets.close(old.id, old.channelId!, staffId, 'Fim');
   const pending = await f.tickets.open(outsiderId, 'bug', 'Teste', 'Descrição.');
   await f.store.transact(s => { const t = s.tickets.find(t => t.id === pending.id)!; t.notificationStatus = 'sending'; delete t.notificationMessageId; });
   const alerts = f.channels.get(f.store.snapshot().config.routes.bug.notificationChannelId!)!;

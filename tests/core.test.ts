@@ -141,7 +141,7 @@ test('usuário comum é bloqueado, cargos publicam e configuração exige Gerenc
   assert.equal(authorized(member(PermissionFlagsBits.ManageGuild), config, true), true);
 });
 test('comandos e componentes serializam sem credenciais e respeitam o escopo de servidor', () => {
-  assert.equal(commands.length, 9); assert.equal(new Set(commands.map(c => c.name)).size, 9);
+  assert.equal(commands.length, 10); assert.equal(new Set(commands.map(c => c.name)).size, 10);
   const d = makeDraft(); assert.ok(controls(d)[0]!.toJSON().components.length >= 2);
   assert.equal(postForm('post:new:comunicado:123456789012345678').toJSON().components.length, 5);
   const composed = { ...d, post: { kind: 'comunicado' as const, title: 'Teste', description: 'Texto', image: '', thumbnail: '', fields: [] }, links: urlButtons('Site | https://example.com') };

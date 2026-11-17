@@ -5,7 +5,9 @@ import { imageUrl, snowflake, text, UserError } from '../validation/input.js';
 import { welcomeEmbed, rulesEmbeds } from '../templates/embeds.js';
 export interface Audit { time: number; action: string; userId: string; channelId?: string; messageId?: string }
 export interface Receipt { key: string; draftId: string; at: number; status: 'sending' | 'sent'; messageId?: string; youtubeMessageId?: string }
-export interface State { version: 1; config: Config; audit: Audit[]; receipts: Receipt[] }
+export const departureLimit = 500;
+export interface Departure { userId: string; username: string; at: number }
+export interface State { version: 1; config: Config; audit: Audit[]; receipts: Receipt[]; departures?: Departure[] }
 export function validateConfig(c: Config): void {
   text(c.name, 80); text(c.footer, 200); imageUrl(c.logo); text(c.welcomeTitle, 200); text(c.welcomeText, 2500);
   for (const id of [c.welcomeChannelId, c.logChannelId, c.rulesChannelId, ...c.adminRoleIds]) if (id) snowflake(id);

@@ -1,9 +1,10 @@
-import { Client, Events, GatewayIntentBits, Options, ActivityType } from 'discord.js';
+import { Client, Events, GatewayIntentBits, Options, ActivityType, Partials } from 'discord.js';
 import { loadEnv } from './config/env.js';
 import { Store } from './services/store.js';
 import { Drafts } from './services/drafts.js';
 import { onInteraction } from './commands/handler.js';
 import { onMemberAdd } from './events/welcome.js';
+import { onMemberRemove } from './events/departures.js';
 import { joinRole, onMemberScreened, recoverJoinRoles } from './events/member-role.js';
 import { register } from './utils/registration.js';
 import { errorCode, log } from './logs/logger.js';
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
   }
   const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
+    partials: [Partials.GuildMember],
     allowedMentions: { parse: [], repliedUser: false },
     makeCache: Options.cacheWithLimits({ ...Options.DefaultMakeCacheSettings, MessageManager: 0, ReactionManager: 0, GuildMemberManager: { maxSize: 20, keepOverLimit: member => member.id === member.client.user?.id }, UserManager: { maxSize: 50, keepOverLimit: user => user.id === user.client.user?.id }, PresenceManager: 0, GuildScheduledEventManager: 0, VoiceStateManager: 0 }),
     sweepers: { ...Options.DefaultSweeperSettings, users: { interval: 300, filter: () => user => user.id !== user.client.user?.id }, guildMembers: { interval: 300, filter: () => member => member.id !== member.client.user?.id } },
@@ -68,6 +70,7 @@ async function main(): Promise<void> {
   });
   client.on(Events.InteractionCreate, i => { void onInteraction(i, ctx); });
   client.on(Events.GuildMemberAdd, member => { void onMemberAdd(member, ctx); });
+  client.on(Events.GuildMemberRemove, member => { void onMemberRemove(member, ctx); });
   client.on(Events.GuildMemberUpdate, (before, member) => { void onMemberScreened(before, member, ctx); });
   client.on(Events.Error, error => log('discord_client_error', { code: errorCode(error) }, 'error'));
   client.on(Events.ShardError, error => log('discord_gateway_error', { code: errorCode(error) }, 'error'));

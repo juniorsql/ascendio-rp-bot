@@ -109,8 +109,8 @@ export async function ticketInteraction(i: Interaction, ctx: Context): Promise<v
         components: [new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(new UserSelectMenuBuilder().setCustomId(`ticket:invite:${ticket.id}:${i.user.id}`).setPlaceholder('Pesquisar uma pessoa do servidor').setMinValues(1).setMaxValues(1))], allowedMentions: { parse: [] } });
     }
     if (action === 'close') {
-      const { ticket } = await tickets.getAuthorized(id ?? '', i.channelId, i.user.id);
-      if (ticket.status === 'closed') throw new UserError('Este atendimento já foi encerrado.');
+      const { ticket } = await tickets.getAuthorized(id ?? '', i.channelId, i.user.id, true);
+      if (ticket.status !== 'open') throw new UserError('Este atendimento já está sendo encerrado ou foi encerrado.');
       return void await i.showModal(form(`ticket:finish:${ticket.id}`, 'Encerrar atendimento', [{ id: 'reason', label: 'Motivo do encerramento', max: 500, paragraph: true, required: false }]));
     }
     if (action === 'claim') {

@@ -16,7 +16,7 @@ export function ticketOverwrites(guildId: string, botId: string, ownerId: string
   const allow = closed ? read : write;
   const deny = closed ? [...never, P.SendMessages, P.AddReactions] : never;
   return [
-    { id: guildId, type: 0, deny: [P.ViewChannel, ...never] },
+    { id: guildId, type: 0, deny: [P.ViewChannel, ...deny] },
     ...[...new Set(roleIds)].map(id => ({ id, type: 0 as const, allow, deny })),
     ...[...new Set([ownerId, ...participantIds])].map(id => ({ id, type: 1 as const, allow, deny })),
     { id: botId, type: 1, allow: [...write, P.ManageChannels, P.ManageRoles, P.MentionEveryone], deny: never.filter(p => p !== P.MentionEveryone) },
@@ -292,7 +292,9 @@ export class Tickets {
     const ticket = this.store.snapshot().tickets.find(t => t.id === id);
     if (!ticket || ticket.channelId !== channelId || ticket.status === 'creating') throw new UserError('Ticket não encontrado neste canal.');
     const channel = await this.channel(channelId), member = await this.member(actorId);
-    if (!channel.permissionsFor(member)?.has(P.ViewChannel) || (!ticketStaff(member, ticket) && (staffOnly || ticket.ownerId !== actorId))) throw new UserError('Ação restrita ao solicitante e à equipe responsável pelo ticket.');
+    if (!channel.permissionsFor(member)?.has(P.ViewChannel) || (!ticketStaff(member, ticket) && (staffOnly || ticket.ownerId !== actorId))) {
+      throw new UserError(staffOnly ? 'Ação restrita à equipe responsável pelo ticket.' : 'Ação restrita ao solicitante e à equipe responsável pelo ticket.');
+    }
     if (ticket.kind === 'thread') {
       if (channel.type !== ChannelType.PrivateThread || channel.parentId !== ticket.parentChannelId) throw new UserError('Tópico de atendimento inválido.');
       if (!ticketStaff(member, ticket)) await channel.members.fetch(actorId);
@@ -366,7 +368,7 @@ export class Tickets {
   }
   async close(id: string, channelId: string, actorId: string, reason: string): Promise<void> {
     return this.exclusive(`ticket:${id}`, async () => {
-      const { ticket } = await this.getAuthorized(id, channelId, actorId);
+      const { ticket } = await this.getAuthorized(id, channelId, actorId, true);
       if (ticket.status === 'closed') return;
       reason = text(reason, 500, 'Motivo', 0) || 'Atendimento concluído.';
       if (ticket.status !== 'closing') await this.store.transact(s => { Object.assign(s.tickets.find(t => t.id === id)!, { status: 'closing', closedBy: actorId, closedAt: Date.now(), reason }); });
