@@ -37,7 +37,11 @@ export function allowlistForm(page: number, app?: Application) {
     modal.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${question.id}.** ${question.prompt}`));
     modal.addLabelComponents(lore
       ? inputLabel(question.id, 'Link da história no Hastebin', app?.answers[question.id], 200, TextInputStyle.Short, 'Cole o link da história salva')
+        .setDescription('Após salvar, use “Enviar para análise” na próxima mensagem.')
       : inputLabel(question.id, 'Sua resposta', app?.answers[question.id], answerLimit, TextInputStyle.Paragraph, 'Escreva sua resposta aqui'));
+  }
+  if (page < pageCount - 1) {
+    modal.addTextDisplayComponents(new TextDisplayBuilder().setContent('-# O botão Enviar salva seu rascunho. Depois, toque em Continuar.'));
   }
   return modal;
 }

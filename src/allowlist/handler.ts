@@ -23,11 +23,10 @@ async function submitLegacyForm(i: ModalSubmitInteraction, allowlist: Allowlist)
       app.formDraft = values;
       restoreLegacyDraft(app);
       await store.save(app);
-      return i.editReply({ content: error.message, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId) });
+      return i.editReply({ content: error.message, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId, resumePage(app)) });
     }
     delete app.formDraft;
     await store.save(app);
-    await allowlist.submit(app);
     return i.editReply(applicationCard(app, config.scheduleChannelId, config.resultChannelId));
   });
 }
@@ -55,11 +54,10 @@ async function saveAnswers(i: ModalSubmitInteraction, allowlist: Allowlist, prom
       }
     }
     await store.save(app);
-    if (page === pageCount - 1 && !problem && applicationReady(app)) {
-      await allowlist.submit(app);
-      return i.editReply({ content: null, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId) });
-    }
-    const next = problem ? page : page === undefined || page === pageCount - 1 ? resumePage(app) : page + 1;
+    let next: number | undefined;
+    if (problem) next = page ?? resumePage(app);
+    else if (page !== undefined && page < pageCount - 1) next = page + 1;
+    else if (!applicationReady(app)) next = resumePage(app);
     return i.editReply({ content: problem ?? null, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId, next) });
   });
 }
@@ -116,8 +114,8 @@ export async function allowlistInteraction(i: Interaction, allowlist: Allowlist 
   const dashboard = async () => applicationCard(await load(), config.scheduleChannelId, config.resultChannelId);
   if (i.isChatInputCommand()) {
     const app = await load();
-    if (!app || (app.stage === 'draft' && !app.feedback)) return i.showModal(allowlistForm(resumePage(app), app));
-    return i.reply({ ...applicationCard(app, config.scheduleChannelId, config.resultChannelId), flags: MessageFlags.Ephemeral });
+    if (!app || (app.stage === 'draft' && !app.feedback && !applicationReady(app))) return i.showModal(allowlistForm(resumePage(app), app));
+    return i.reply({ ...applicationCard(app, config.scheduleChannelId, config.resultChannelId, app.feedback ? 0 : undefined), flags: MessageFlags.Ephemeral });
   }
   if (!i.isButton() && !i.isModalSubmit() && !i.isStringSelectMenu()) return;
   const [, action, key, appId] = i.customId.split(':');
@@ -126,8 +124,8 @@ export async function allowlistInteraction(i: Interaction, allowlist: Allowlist 
   }
   if (action === 'home' && i.isButton()) {
     const app = await load();
-    if (!app || (app.stage === 'draft' && !app.feedback)) return i.showModal(allowlistForm(resumePage(app), app));
-    const view = applicationCard(app, config.scheduleChannelId, config.resultChannelId);
+    if (!app || (app.stage === 'draft' && !app.feedback && !applicationReady(app))) return i.showModal(allowlistForm(resumePage(app), app));
+    const view = applicationCard(app, config.scheduleChannelId, config.resultChannelId, app.feedback ? 0 : undefined);
     return i.channelId === config.panelChannelId && !i.message.flags.has(MessageFlags.Ephemeral)
       ? i.reply({ ...view, flags: MessageFlags.Ephemeral })
       : i.update({ content: null, ...view });

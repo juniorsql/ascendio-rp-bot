@@ -126,13 +126,24 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
     return JSON.stringify(replies[1]);
   }
   for (let page = 0; page < pageCount - 1; page++) {
-    assert.match(await submitPage(page), /respostas salvas/);
+    const progress = await submitPage(page);
+    assert.match(progress, /Continuar/);
+    assert.doesNotMatch(progress, /Enviar para análise/);
     assert.equal(sent.length, 0);
   }
   assert.match(await submitPage(pageCount - 1, 'minha história'), /link do texto salvo/);
   assert.equal((await reopened.get(applicant))?.answers['15'], 'Minha resposta de teste.');
   assert.equal(sent.length, 0);
-  assert.match(await submitPage(pageCount - 1), /com a equipe para análise/);
+  assert.match(await submitPage(pageCount - 1), /Enviar para análise/);
+  assert.equal((await reopened.get(applicant))?.stage, 'draft');
+  assert.equal(sent.length, 0);
+  const confirmation: unknown[] = [];
+  await allowlistInteraction({
+    user: { id: applicant }, guild: discordGuild, guildId, customId: 'al:send',
+    isChatInputCommand: () => false, isButton: () => true, isStringSelectMenu: () => false, isModalSubmit: () => false,
+    deferUpdate: async () => undefined, editReply: async (reply: unknown) => { confirmation.push(reply); },
+  } as unknown as Interaction, service);
+  assert.match(JSON.stringify(confirmation[0]), /com a equipe para análise/);
   Object.assign(app, await service.store.get(applicant));
   assert.equal(app.stage, 'review');
   assert.equal(applicantRoles.size, 0);

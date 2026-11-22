@@ -19,7 +19,7 @@ export function panelCard() {
     embeds: [{
       title: '🪄 ASCENDIO ROLEPLAY | ALLOWLIST',
       color: gold,
-      description: 'Responda às 16 perguntas da Allowlist do Ascendio RP. Cada pergunta tem um campo próprio para digitar. Suas respostas ficam salvas conforme você avança.\n\nNa pergunta 16, cole o link da história do seu personagem no Hastebin.\n\n*Toda grande história começa com um personagem. A sua começa aqui.*',
+      description: 'Responda às 16 perguntas da Allowlist do Ascendio RP. Suas respostas ficam salvas como rascunho conforme você avança. Na pergunta 16, cole o link da história do seu personagem no Hastebin.\n\nQuando terminar, use **Enviar para análise** para entregar a ficha à staff.\n\n*Toda grande história começa com um personagem. A sua começa aqui.*',
       footer,
     }],
     components: [new ActionRowBuilder<ButtonBuilder>().addComponents(button('home', 'Preencher formulário', ButtonStyle.Primary))],
@@ -50,10 +50,13 @@ export function applicationCard(app: Application | undefined, scheduleChannelId:
   const count = questions.filter(question => app?.answers[question.id] && (question.id !== '16' || app.character)).length;
   const progress = `**${count} de ${questions.length} respostas salvas**`;
   const feedback = app?.feedback ? `\n\n**Ajustes solicitados pela equipe**\n${safeText(app.feedback)}` : '';
-  const description = progress + feedback;
+  const ready = nextPage === undefined && applicationReady(app);
+  const description = progress + (ready ? '\nSua ficha está pronta para análise.' : '') + feedback;
   const page = nextPage ?? (app?.feedback ? 0 : resumePage(app));
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button(`page:${page}`, count ? 'Continuar' : 'Começar', ButtonStyle.Primary));
-  if (page > 0) row.addComponents(button('page:0', 'Revisar do início'));
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(ready
+    ? button('send', 'Enviar para análise', ButtonStyle.Success)
+    : button(`page:${page}`, count ? 'Continuar' : 'Começar', ButtonStyle.Primary));
+  if (ready || page > 0) row.addComponents(button('page:0', 'Revisar do início'));
   components.push(row);
   return { embeds: [{ title: '📜 Minha Allowlist', description, color: gold, footer }], components, allowedMentions: silent };
 }
