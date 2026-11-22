@@ -89,6 +89,10 @@ export function reviewCard(app: Application) {
   );
   if (stage === 'awaiting') controls.addComponents(button(`interview-pass:${key}`, 'Aprovar entrevista e publicar', ButtonStyle.Success));
   if (stage === 'review' || stage === 'awaiting') controls.addComponents(button(`reject:${key}`, 'Reprovar e publicar', ButtonStyle.Danger));
+  if (stage === 'approved' || stage === 'rejected') controls.addComponents(
+    button(`interview-pass:${key}`, 'Aprovar entrevista e publicar', ButtonStyle.Success).setDisabled(true),
+    button(`reject:${key}`, 'Reprovar e publicar', ButtonStyle.Danger).setDisabled(true),
+  );
   if (stage === 'publishing') {
     const action = app.resultDecision === 'rejected' ? 'reject' : 'interview-pass';
     controls.addComponents(button(`${action}:${key}`, 'Concluir publicação', ButtonStyle.Primary));
@@ -99,12 +103,23 @@ export function reviewCard(app: Application) {
     .setCustomId(`al:read:${key}`).setPlaceholder('Ler respostas da ficha')
     .addOptions(sections.map((section, index) => ({ label: section.title, value: String(index) }))));
   const components = stage === 'draft' ? [] : [read, ...(controls.components.length ? [controls] : [])];
-  const reviewer = app.reviewerId ? `\n**Análise** · <@${app.reviewerId}>` : '';
-  const interviewer = app.interviewerId ? `\n**Entrevista** · <@${app.interviewerId}>` : '';
-  const rejection = app.rejectedById ? `\n**Reprovado por** · <@${app.rejectedById}>` : '';
+  const time = (at: number | undefined) => at ? `<t:${Math.floor(at / 1000)}:f>` : '';
+  const record = (label: string, userId: string | undefined, at?: number) =>
+    [`**${label}**`, userId && `<@${userId}>`, time(at)].filter(Boolean).join(' · ');
+  const audit = [
+    app.submittedAt && record('Enviada', undefined, app.submittedAt),
+    app.reviewerId && record('Formulário aprovado', app.reviewerId, app.formApprovedAt),
+    stage === 'approved' && app.interviewerId && record('Entrevista aprovada', app.interviewerId, app.decidedAt ?? app.resultStartedAt),
+    stage === 'rejected' && app.rejectedById && record('Reprovada', app.rejectedById, app.decidedAt ?? app.resultStartedAt),
+  ].filter(Boolean);
+  const details = [
+    `**Jogador** · <@${app.userId}>`,
+    `**Personagem** · ${safeText(escapeMarkdown(app.character))}`,
+    ...audit,
+  ];
   return {
     embeds: [{ title: titles[stage], color: stage === 'approved' ? green : stage === 'rejected' ? red : gold,
-      description: `**Jogador** · <@${app.userId}>\n**Personagem** · ${safeText(escapeMarkdown(app.character))}${reviewer}${interviewer}${rejection}`,
+      description: details.join('\n'),
       footer: { text: `Ficha ${app.id}` },
     }],
     components, allowedMentions: silent,

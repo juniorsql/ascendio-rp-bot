@@ -60,7 +60,7 @@ async function main(): Promise<void> {
       try { await register(env); registered = true; } catch (error) { log('registration_failed', { code: errorCode(error) }, 'error'); }
     }
     if (allowlist) {
-      const resetRequest = process.env.ALLOWLIST_RESET_OWNER_ONCE;
+      const resetRequest = process.env.ALLOWLIST_RESET_OWNER_TEST;
       if (resetRequest) {
         try {
           await allowlist.resetOwnerTest(resetRequest);

@@ -112,6 +112,31 @@ export class Allowlist {
       const current = await this.store.get(userId);
       if (current?.ownerResetRequest === nonce) return false;
       await this.store.save({ ...newApplication(userId), ownerResetRequest: nonce });
+      if (current?.reviewerId && (current.stage === 'awaiting' || current.stage === 'publishing')) {
+        try {
+          const member = await guild.members.fetch({ user: userId, force: true, cache: false });
+          if (member.roles.cache.has(this.config.waitingRoleId)) {
+            await member.roles.remove(this.config.waitingRoleId, 'Reinício da ficha de teste da Allowlist');
+          }
+        } catch (error) {
+          log('allowlist_test_role_cleanup_failed', { guildId: this.guildId, code: errorCode(error) }, 'warn');
+        }
+      }
+      if (current?.reviewId) {
+        try {
+          const channel = await this.reviewChannel();
+          const message = await channel.messages.fetch({ message: current.reviewId, cache: false });
+          if (message.author.id === this.client.user?.id) {
+            await message.edit({
+              embeds: [{ title: '🧪 Ficha de teste reiniciada', description: 'A ficha foi limpa para um novo teste.', color: 0xb69a60 }],
+              components: [],
+              allowedMentions: { parse: [] },
+            });
+          }
+        } catch (error) {
+          log('allowlist_test_card_cleanup_failed', { guildId: this.guildId, code: errorCode(error) }, 'warn');
+        }
+      }
       log('allowlist_owner_test_reset', {
         guildId: this.guildId,
         action: `previousStage=${current?.stage ?? 'none'}, answers=${Object.keys(current?.answers ?? {}).length}, storyLinkSaved=${Boolean(current?.answers['16'])}`,
@@ -162,6 +187,7 @@ export class Allowlist {
       await candidate.roles.add(role.id, 'Formulário de Allowlist aprovado');
       app.stage = 'awaiting';
       app.reviewerId = reviewerId;
+      app.formApprovedAt = Date.now();
       await this.store.save(app);
     }
     if (app.formApprovalDm) return;
@@ -210,6 +236,7 @@ export class Allowlist {
     const message = existing || await channel.send({ ...post, nonce: `al-f-${app.id}`, enforceNonce: true } satisfies MessageCreateOptions);
     app.resultId = message.id;
     app.stage = decision;
+    app.decidedAt = Date.now();
     await this.store.save(app);
   }
 
@@ -219,7 +246,7 @@ export class Allowlist {
       try {
         await this.store.run(userId, async () => {
           const app = await this.store.get(userId);
-          if (!app?.reviewId || !['review', 'awaiting', 'publishing'].includes(app.stage)) return;
+          if (!app?.reviewId || !['review', 'awaiting', 'publishing', 'approved', 'rejected'].includes(app.stage)) return;
           const message = await channel.messages.fetch({ message: app.reviewId, cache: false });
           if (message.author.id !== this.client.user?.id) return;
           const buttonLabel = app.stage === 'publishing' ? 'Concluir publicação' : 'Reprovar e publicar';
@@ -227,7 +254,12 @@ export class Allowlist {
             && row.components.some(component => 'label' in component && component.label === buttonLabel));
           const missingStory = storyButton(app) && !message.components.some(row => 'components' in row
             && row.components.some(component => 'url' in component && component.url === app.answers['16']));
-          if (!alreadyUpdated || missingStory) await this.refreshReview(message, app);
+          const final = app.stage === 'approved' || app.stage === 'rejected';
+          const locked = ['Aprovar entrevista e publicar', 'Reprovar e publicar'].every(label =>
+            message.components.some(row => 'components' in row && row.components.some(component =>
+              'label' in component && component.label === label && 'disabled' in component && component.disabled)));
+          const updatedText = message.embeds[0]?.description === reviewCard(app).embeds[0]?.description;
+          if (!(final ? locked : alreadyUpdated) || missingStory || !updatedText) await this.refreshReview(message, app);
         });
       } catch (error) {
         log('allowlist_review_upgrade_failed', { channelId: channel.id, code: errorCode(error) }, 'warn');

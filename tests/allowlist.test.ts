@@ -67,11 +67,29 @@ test('Allowlist exibe cada pergunta fixa acima de uma resposta inicialmente vazi
 test('reinicia apenas a ficha do dono e aplica o mesmo pedido uma vez', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'ascendio-allowlist-reset-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const client = { guilds: { fetch: async () => ({ ownerId: staff }) } } as unknown as Client;
+  const roles = new Set([config.waitingRoleId, config.staffRoleIds[0]!]);
+  const guild = { ownerId: staff, members: {
+    me: {},
+    fetch: async () => ({ roles: { cache: roles, remove: async (id: string) => roles.delete(id) } }),
+  } };
+  const overwrites = new Collection([[guildId, {
+    id: guildId, type: OverwriteType.Role, allow: new PermissionsBitField(),
+    deny: new PermissionsBitField(PermissionFlagsBits.ViewChannel),
+  }]]);
+  const edits: Array<{ components: unknown[]; embeds: Array<{ title: string }> }> = [];
+  const client = { user: { id: botId }, guilds: { fetch: async () => guild }, channels: {
+    fetch: async () => ({
+      guildId, guild, type: ChannelType.GuildText, permissionsFor: () => fullPermissions,
+      permissionOverwrites: { cache: overwrites },
+      messages: { fetch: async () => ({ author: { id: botId }, edit: async (data: typeof edits[number]) => edits.push(data) }) },
+    }),
+  } } as unknown as Client;
   const service = new Allowlist(client, guildId, config, dir);
   await service.store.init();
   const original = newApplication(staff);
-  original.stage = 'review';
+  original.stage = 'awaiting';
+  original.reviewerId = staff;
+  original.reviewId = '983456789012345678';
   original.answers['1'] = 'Dado de teste';
   const other = newApplication(applicant);
   await service.store.save(original);
@@ -83,9 +101,13 @@ test('reinicia apenas a ficha do dono e aplica o mesmo pedido uma vez', async t 
   assert.notEqual(fresh.id, original.id);
   assert.equal(fresh.stage, 'draft');
   assert.deepEqual(fresh.answers, {});
+  assert.deepEqual([...roles], config.staffRoleIds);
+  assert.match(edits[0]?.embeds[0]?.title ?? '', /Ficha de teste reiniciada/);
+  assert.deepEqual(edits[0]?.components, []);
   fresh.answers['1'] = 'Novo teste';
   await service.store.save(fresh);
   assert.equal(await service.resetOwnerTest(request), false);
+  assert.equal(edits.length, 1);
   assert.deepEqual(await service.store.get(staff), fresh);
   assert.deepEqual(await service.store.get(applicant), other);
 });
@@ -209,6 +231,7 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   assert.equal(privateNotices[0]?.userId, applicant);
   assert.match(privateNotices[0]?.options.content ?? '', new RegExp(config.scheduleChannelId));
   assert.equal(app.stage, 'awaiting');
+  assert.ok(app.formApprovedAt);
   assert.equal(applicantRoles.has(config.waitingRoleId), true);
   assert.match(applicationCard(app, config.scheduleChannelId, config.resultChannelId).embeds[0]!.description!, new RegExp(config.scheduleChannelId));
 
@@ -224,6 +247,24 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   await service.publishDecision(app, discordGuild, staff, decision);
   assert.equal(applicantRoles.size, 0);
   assert.equal(app.stage, decision);
+  assert.ok(app.decidedAt);
+  const card = reviewCard(app);
+  assert.match(card.embeds[0]?.description ?? '', /Formulário aprovado.*<t:\d+:f>/);
+  assert.match(card.embeds[0]?.description ?? '', /(?:Entrevista aprovada|Reprovada).*<t:\d+:f>/);
+  const buttons = card.components.map(row => row.toJSON().components).flat().filter(part => part.type === ComponentType.Button);
+  const decisionButtons = buttons.filter(part => 'custom_id' in part);
+  assert.equal(decisionButtons.length, 2);
+  assert.ok(decisionButtons.every(part => part.disabled === true));
+  assert.ok(buttons.some(part => 'url' in part && part.url === link && !part.disabled));
+  const staleEdits: unknown[] = [];
+  await assert.rejects(allowlistInteraction({
+    user: { id: staff }, guild: discordGuild, guildId, channelId: config.reviewChannelId,
+    customId: `al:${decision === 'approved' ? 'interview-pass' : 'reject'}:${applicant}:${app.id}`,
+    message: { id: app.reviewId, edit: async (options: unknown) => staleEdits.push(options) },
+    isChatInputCommand: () => false, isButton: () => true, isStringSelectMenu: () => false, isModalSubmit: () => false,
+    deferReply: async () => undefined,
+  } as unknown as Interaction, service), /resultado desta ficha já foi publicado/);
+  assert.equal(staleEdits.length, 1);
   assert.equal(privateNotices.length, 1);
   assert.equal(sent.filter(message => message.channelId === config.resultChannelId).length, 1);
   assert.deepEqual(sent[1]?.options.allowedMentions, { parse: [], users: [applicant] });

@@ -13,6 +13,8 @@ export interface Application {
   formDraft?: string[];
   stage: Stage;
   submittedAt?: number;
+  formApprovedAt?: number;
+  decidedAt?: number;
   resultStartedAt?: number;
   resultDecision?: Decision;
   reviewId?: string;

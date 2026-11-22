@@ -33,7 +33,9 @@ export function allowlistForm(page: number, app?: Application) {
   const modal = new ModalBuilder().setCustomId(`al:answers-v2:${page}`).setTitle(`Allowlist • ${page + 1} de ${pageCount}`);
   for (const question of pageQuestions(page)) {
     if (question.id === '16') {
-      modal.addTextDisplayComponents(new TextDisplayBuilder().setContent('**16. Qual é a história do seu personagem?**\nConte sua origem, personalidade e motivações no mundo bruxo de 1940.'));
+      modal.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+        '**16. Qual é a história do seu personagem?**\nInclua idade, família, origem, qualidades, defeitos e objetivos. Conte um acontecimento marcante e explique o que o trouxe à região de Hogwarts em 1940. Habilidades raras e vínculos especiais precisam de aprovação da staff.',
+      ));
       modal.addLabelComponents(
         inputLabel('character', 'Nome do personagem', app?.character, 80, TextInputStyle.Short, 'Nome completo do personagem'),
         inputLabel(question.id, 'Link da história', app?.answers[question.id], loreLinkLimit, TextInputStyle.Short, 'Cole o endereço que abre a sua história')

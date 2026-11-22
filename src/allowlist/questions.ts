@@ -61,21 +61,21 @@ export const sections: readonly Section[] = [
 export const questions = sections.flatMap(section => section.questions);
 
 export const shortQuestions = [
-  ['O que seu personagem realmente sabe?', 'Você conhece Harry Potter, mas ele acaba de chegar a Hogwarts. Como separa os conhecimentos?'],
-  ['Como você interpretaria uma derrota?', 'Seu personagem perdeu um duelo que você queria vencer. Como ele lida com as consequências?'],
-  ['Como reagiria ao discordar do professor?', 'Seu personagem acha que sabe mais. Considere a experiência do professor e seus próprios limites.'],
-  ['Como reagiria a uma discussão?', 'Dois bruxos discutem e seu personagem não sabe por quê. Ele interfere, observa ou pede ajuda?'],
-  ['Como conquistaria reconhecimento?', 'Seu personagem busca prestígio. Como ele o conquista sem exigir reconhecimento dos outros?'],
-  ['Pode entrar na Floresta Proibida?', 'Um estudante quer ir à noite, sem autorização nem companhia. O que dizem as regras? Explique.'],
-  ['Como lidaria com um segredo fora do RP?', 'Você descobriu um segredo de outro personagem fora do jogo. Como age dentro do RP?'],
-  ['Como obteria uma habilidade rara?', 'Como o Ascendio RP aprova Animagia, Legilimência ou vínculos com criaturas extraordinárias?'],
-  ['Como seu personagem vive em 1940?', 'Como adaptaria os costumes, conhecimentos e comportamentos do personagem à época?'],
-  ['Como reagiria às notícias de ataques?', 'Como os ataques noticiados pelo Profeta Diário afetariam sua rotina e suas decisões?'],
-  ['O que pensa sobre Grindelwald?', 'Como as tensões no mundo bruxo influenciam sua opinião e suas relações?'],
-  ['Como reagiria aos rumores da Floresta?', 'Investigaria, pediria ajuda ou evitaria o local? Considere sua personalidade e seus limites.'],
-  ['O que quer viver no Ascendio RP?', 'Quais histórias, atividades ou experiências mais despertam seu interesse?'],
-  ['O que já desmotivou você no RP?', 'Pense nas suas experiências em jogos e comunidades. O que atrapalhou sua diversão?'],
-  ['Como contribuiria com a comunidade?', 'Como você ajudaria a tornar o RP divertido, respeitoso e envolvente para todos?'],
+  ['O que seu personagem pode saber?', 'Ele acaba de chegar a Hogwarts. Como você separa o que sabe como jogador do que ele aprendeu?'],
+  ['Como ele lida com a derrota?', 'Ele perdeu um duelo que você queria vencer. Como você mostraria as consequências no RP?'],
+  ['Como ele discordaria de um professor?', 'Ele acha que sabe mais. O que diria ou faria, considerando a experiência do professor?'],
+  ['Como agiria ao ver uma discussão?', 'Dois bruxos discutem e ele não sabe por quê. Ele interfere, observa ou pede ajuda? Por quê?'],
+  ['Como ele ganharia prestígio?', 'Que escolhas ajudariam seu personagem a ganhar reconhecimento sem forçar os outros a admirá-lo?'],
+  ['Pode entrar na Floresta Proibida?', 'Um estudante quer entrar à noite, sozinho e sem autorização. Explique o que dizem as regras.'],
+  ['Como lidar com informação fora do RP?', 'Você descobriu um segredo sobre outro personagem fora do jogo. Como lidaria com isso no RP?'],
+  ['Como ele obteria uma habilidade rara?', 'Explique como pedir aprovação para Animagia, Legilimência ou um vínculo com criatura rara.'],
+  ['Como você interpretaria alguém de 1940?', 'Dê exemplos de costumes, conhecimentos ou comportamentos do personagem adequados à época.'],
+  ['Como os ataques afetariam sua rotina?', 'O Profeta Diário noticia ataques misteriosos. O que mudaria nas decisões do seu personagem?'],
+  ['O que ele pensa sobre Grindelwald?', 'Explique a posição do personagem sobre os ideais de Grindelwald e como isso afeta suas relações.'],
+  ['Como ele reagiria aos rumores?', 'Ele ouviu rumores sobre a Floresta Proibida. Iria investigar, pedir ajuda ou ficar longe? Por quê?'],
+  ['O que você quer viver no Ascendio RP?', 'Conte que histórias, atividades ou experiências você gostaria de jogar aqui.'],
+  ['O que já tirou sua vontade de jogar RP?', 'Se já jogou RP, conte uma situação que desanimou você e explique o que atrapalhou.'],
+  ['Como você ajudaria a comunidade?', 'Dê um exemplo de como tornaria o RP respeitoso e divertido para quem joga com você.'],
 ] as const;
 
 export function questionAt(id: string | undefined): Question {

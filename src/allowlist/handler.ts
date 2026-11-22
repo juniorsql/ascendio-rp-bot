@@ -82,6 +82,10 @@ async function staffAction(i: Component, allowlist: Allowlist, action: string, u
     const app = await allowlist.store.get(userId);
     if (app?.id !== applicationId || app.reviewId !== message.id || app.stage === 'draft') throw new UserError('Esta ficha já foi atualizada. Use o card mais recente.');
     if (action === 'read' && i.isStringSelectMenu()) return i.editReply(answersCard(app, i.values[0] ?? ''));
+    if (app.stage === 'approved' || app.stage === 'rejected') {
+      await allowlist.refreshReview(message, app);
+      throw new UserError('O resultado desta ficha já foi publicado.');
+    }
     let confirmation: string;
     if (action === 'form-pass' && i.isButton()) {
       await allowlist.approveForm(app, guild, i.user.id);
