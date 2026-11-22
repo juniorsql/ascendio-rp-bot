@@ -62,6 +62,7 @@ async function main(): Promise<void> {
     if (allowlist) {
       try { log('allowlist_ready', { messageId: await allowlist.ensurePanel() }); }
       catch (error) { log('allowlist_setup_failed', { code: errorCode(error) }, 'error'); }
+      void allowlist.refreshActiveReviews().catch(error => log('allowlist_review_upgrade_failed', { code: errorCode(error) }, 'warn'));
     }
     try { await recoverJoinRoles(ctx); }
     catch (error) { log('join_role_recovery_failed', { guildId: env.guildId, code: errorCode(error) }, 'error'); }

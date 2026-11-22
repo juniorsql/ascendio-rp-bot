@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, open, readFile, rename } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { snowflake, UserError } from '../validation/input.js';
 
-export type Stage = 'draft' | 'submitting' | 'review' | 'awaiting' | 'publishing' | 'approved';
+export type Decision = 'approved' | 'rejected';
+export type Stage = 'draft' | 'submitting' | 'review' | 'awaiting' | 'publishing' | Decision;
 export interface Application {
   id: string;
   userId: string;
@@ -12,10 +13,12 @@ export interface Application {
   stage: Stage;
   submittedAt?: number;
   resultStartedAt?: number;
+  resultDecision?: Decision;
   reviewId?: string;
   resultId?: string;
   reviewerId?: string;
   interviewerId?: string;
+  rejectedById?: string;
   feedback?: string;
 }
 
@@ -30,6 +33,11 @@ export class AllowlistStore {
   constructor(dataDir: string) { this.directory = join(dataDir, 'allowlist'); }
 
   async init() { await mkdir(this.directory, { recursive: true, mode: 0o700 }); }
+
+  async userIds() {
+    const files = await readdir(this.directory);
+    return files.filter(file => /^\d{17,20}\.json$/.test(file)).map(file => file.slice(0, -5));
+  }
 
   private file(userId: string) { return join(this.directory, `${snowflake(userId)}.json`); }
 

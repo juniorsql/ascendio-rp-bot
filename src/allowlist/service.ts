@@ -4,7 +4,7 @@ import { errorCode, log } from '../logs/logger.js';
 import { target } from '../services/discord.js';
 import { snowflake, UserError } from '../validation/input.js';
 import { applicationReady, panelCard, resultCard, reviewCard } from './cards.js';
-import { AllowlistStore, newApplication, type Application } from './store.js';
+import { AllowlistStore, newApplication, type Application, type Decision } from './store.js';
 
 export interface AllowlistConfig {
   panelChannelId: string;
@@ -93,12 +93,17 @@ export class Allowlist {
     const recent = await panel.messages.fetch({ limit: 50, cache: false });
     const existing = recent.find(message => message.author.id === this.client.user?.id
       && message.components.some(row => 'components' in row && row.components.some(component => 'customId' in component && component.customId === 'al:home')));
-    return (existing ?? await panel.send({ ...panelCard(), nonce: `al-${this.config.panelChannelId}`, enforceNonce: true })).id;
+    const card = panelCard();
+    if (existing) {
+      if (existing.embeds[0]?.description !== card.embeds[0]?.description) await existing.edit(card);
+      return existing.id;
+    }
+    return (await panel.send({ ...card, nonce: `al-${this.config.panelChannelId}`, enforceNonce: true })).id;
   }
 
   async submit(app: Application) {
     if (app.stage !== 'draft' && app.stage !== 'submitting') throw new UserError('Sua ficha já foi enviada para a equipe.');
-    if (!applicationReady(app)) throw new UserError('Responda às cinco partes antes de enviar.');
+    if (!applicationReady(app)) throw new UserError('Responda às 16 perguntas antes de enviar.');
     const channel = await this.reviewChannel();
     const retry = app.stage === 'submitting';
     if (!retry) {
@@ -131,28 +136,56 @@ export class Allowlist {
     await this.store.save(app);
   }
 
-  async approveInterview(app: Application, guild: Guild, interviewerId: string) {
-    if (app.stage === 'approved') return;
-    if (app.stage !== 'awaiting' && app.stage !== 'publishing') throw new UserError('A ficha ainda precisa ser aprovada antes da entrevista.');
-    const channel = await this.channel(this.config.resultChannelId);
+  async publishDecision(app: Application, guild: Guild, staffId: string, decision: Decision) {
+    if (app.stage === decision) return;
     const retry = app.stage === 'publishing';
+    if (retry && (app.resultDecision ?? 'approved') !== decision) {
+      throw new UserError('Já existe outro resultado em publicação para esta ficha.');
+    }
+    if (!retry && app.stage !== 'awaiting' && !(app.stage === 'review' && decision === 'rejected')) {
+      throw new UserError('Este resultado não está disponível para a etapa atual da ficha.');
+    }
+    const channel = await this.channel(this.config.resultChannelId);
+    const candidate = await guild.members.fetch({ user: app.userId, force: true, cache: false });
     if (!retry) {
-      const candidate = await guild.members.fetch({ user: app.userId, force: true, cache: false });
       if (!channel.permissionsFor(candidate)?.has(PermissionFlagsBits.ViewChannel)) throw new UserError('O candidato precisa ter acesso ao canal de resultado.');
       app.stage = 'publishing';
-      app.interviewerId = interviewerId;
+      app.resultDecision = decision;
       app.resultStartedAt = Date.now();
+      if (decision === 'approved') app.interviewerId = staffId;
+      else app.rejectedById = staffId;
       await this.store.save(app);
     }
-    const candidate = await guild.members.fetch({ user: app.userId, force: true, cache: false });
-    if (candidate.roles.cache.has(this.config.waitingRoleId)) await candidate.roles.remove(this.config.waitingRoleId, 'Entrevista de Allowlist aprovada');
-    const post = resultCard(app);
+    if (candidate.roles.cache.has(this.config.waitingRoleId)) {
+      await candidate.roles.remove(this.config.waitingRoleId, 'Avaliação de Allowlist concluída');
+    }
+    const post = resultCard(app, decision);
     const existing = retry && await findRecent(channel, app.resultStartedAt! - 10_000, message =>
       message.author.id === this.client.user?.id && message.content === post.content && message.embeds[0]?.title === post.embeds[0]?.title);
     const message = existing || await channel.send({ ...post, nonce: `al-f-${app.id}`, enforceNonce: true } satisfies MessageCreateOptions);
     app.resultId = message.id;
-    app.stage = 'approved';
+    app.stage = decision;
     await this.store.save(app);
+  }
+
+  async refreshActiveReviews() {
+    const channel = await this.reviewChannel();
+    for (const userId of await this.store.userIds()) {
+      try {
+        await this.store.run(userId, async () => {
+          const app = await this.store.get(userId);
+          if (!app?.reviewId || !['review', 'awaiting', 'publishing'].includes(app.stage)) return;
+          const message = await channel.messages.fetch({ message: app.reviewId, cache: false });
+          if (message.author.id !== this.client.user?.id) return;
+          const buttonLabel = app.stage === 'publishing' ? 'Concluir publicação' : 'Reprovar e publicar';
+          const alreadyUpdated = message.components.some(row => 'components' in row
+            && row.components.some(component => 'label' in component && component.label === buttonLabel));
+          if (!alreadyUpdated) await this.refreshReview(message, app);
+        });
+      } catch (error) {
+        log('allowlist_review_upgrade_failed', { channelId: channel.id, code: errorCode(error) }, 'warn');
+      }
+    }
   }
 
   async refreshReview(message: Message, app: Application) {

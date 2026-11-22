@@ -1,8 +1,8 @@
 import { MessageFlags, type ButtonInteraction, type Interaction, type ModalSubmitInteraction, type StringSelectMenuInteraction } from 'discord.js';
 import { form } from '../components/forms.js';
 import { snowflake, text, UserError } from '../validation/input.js';
-import { answerForm, answersCard, applicationCard, sectionAt, sectionCard, silent } from './cards.js';
-import { answerLimit, loreLink } from './questions.js';
+import { answerForm, answersCard, applicationCard, nextQuestion, sectionAt, silent } from './cards.js';
+import { answerLimit, loreLink, questionAt } from './questions.js';
 import type { Allowlist } from './service.js';
 import { newApplication } from './store.js';
 
@@ -29,9 +29,17 @@ async function staffAction(i: Component, allowlist: Allowlist, action: string, u
     if (action === 'form-pass' && i.isButton()) {
       await allowlist.approveForm(app, guild, i.user.id);
       confirmation = `Formulário aprovado. O candidato pode combinar o horário em <#${allowlist.config.scheduleChannelId}>.`;
-    } else if (action === 'interview-pass' && i.isButton()) {
-      await allowlist.approveInterview(app, guild, i.user.id);
-      confirmation = `Entrevista aprovada. [Abrir o resultado](https://discord.com/channels/${allowlist.guildId}/${allowlist.config.resultChannelId}/${app.resultId})`;
+    } else if ((action === 'interview-pass' || action === 'reject') && i.isButton()) {
+      const decision = action === 'reject' ? 'rejected' : 'approved';
+      try {
+        await allowlist.publishDecision(app, guild, i.user.id, decision);
+      } catch (error) {
+        const persisted = await allowlist.store.get(userId);
+        if (persisted?.stage === 'publishing') await allowlist.refreshReview(message, persisted);
+        throw error;
+      }
+      const outcome = decision === 'approved' ? 'Entrevista aprovada.' : 'Reprovação publicada.';
+      confirmation = `${outcome} [Abrir o resultado](https://discord.com/channels/${allowlist.guildId}/${allowlist.config.resultChannelId}/${app.resultId})`;
     } else if (action === 'adjust-save' && i.isModalSubmit() && app.stage === 'review') {
       app.feedback = text(i.fields.getTextInputValue('feedback'), 800, 'Orientação da equipe');
       app.stage = 'draft';
@@ -52,7 +60,7 @@ export async function allowlistInteraction(i: Interaction, allowlist: Allowlist 
   if (i.isChatInputCommand()) return i.reply({ ...await dashboard(), flags: MessageFlags.Ephemeral });
   if (!i.isButton() && !i.isModalSubmit() && !i.isStringSelectMenu()) return;
   const [, action, key, appId] = i.customId.split(':');
-  if (['read', 'form-pass', 'interview-pass', 'adjust', 'adjust-save'].includes(action ?? '')) {
+  if (['read', 'form-pass', 'interview-pass', 'reject', 'adjust', 'adjust-save'].includes(action ?? '')) {
     return staffAction(i, allowlist, action!, snowflake(key ?? ''), appId ?? '');
   }
   if (action === 'home' && i.isButton()) {
@@ -61,32 +69,39 @@ export async function allowlistInteraction(i: Interaction, allowlist: Allowlist 
       ? i.reply({ ...view, flags: MessageFlags.Ephemeral })
       : i.update({ content: null, ...view });
   }
-  if (action === 'section' && i.isButton()) return i.update({ content: null, ...sectionCard(key ?? '') });
-  if (action === 'edit' && i.isButton()) {
+  if ((action === 'section' || action === 'edit') && i.isButton()) return i.update({ content: null, ...await dashboard() });
+  if ((action === 'choose' && i.isStringSelectMenu()) || (action === 'next' && i.isButton())) {
     const app = await store.get(i.user.id);
     if (app && app.stage !== 'draft') throw new UserError('Sua ficha já foi enviada. Consulte o status no painel.');
-    return i.showModal(answerForm(key ?? '', app));
+    const question = i.isStringSelectMenu() ? questionAt(i.values[0]) : nextQuestion(app);
+    if (!question) return i.update({ content: null, ...await dashboard() });
+    return i.showModal(answerForm(question.id, app));
   }
-  if (action === 'save' && i.isModalSubmit()) {
-    const section = sectionAt(key);
-    await i.deferReply({ flags: MessageFlags.Ephemeral });
+  if ((action === 'save-answer' || action === 'save') && i.isModalSubmit()) {
+    const prompts = action === 'save' ? sectionAt(key).questions : [questionAt(key)];
+    if (i.isFromMessage() && i.message.flags.has(MessageFlags.Ephemeral)) await i.deferUpdate();
+    else await i.deferReply({ flags: MessageFlags.Ephemeral });
     await store.run(i.user.id, async () => {
       const app = await store.get(i.user.id) ?? newApplication(i.user.id);
       if (app.stage !== 'draft') throw new UserError('Sua ficha já foi enviada. Consulte o status no painel.');
-      if (key === '4') app.character = text(i.fields.getTextInputValue('character'), 80, 'Nome do personagem');
-      for (const q of section.questions) {
-        const value = i.fields.getTextInputValue(q.id);
-        app.answers[q.id] = q.id === '16' ? loreLink(value) : text(value, answerLimit, q.label);
+      for (const question of prompts) {
+        const value = i.fields.getTextInputValue(question.id);
+        if (question.id === '16') {
+          app.character = text(i.fields.getTextInputValue('character'), 80, 'Nome do personagem');
+          app.answers[question.id] = loreLink(value);
+        } else {
+          app.answers[question.id] = text(value, answerLimit, question.label);
+        }
       }
       await store.save(app);
     });
-    return i.editReply({ content: 'Parte salva.', ...await dashboard() });
+    return i.editReply({ content: null, ...await dashboard() });
   }
   if (action === 'send' && i.isButton()) {
     await i.deferUpdate();
     await store.run(i.user.id, async () => {
       const app = await store.get(i.user.id);
-      if (!app) throw new UserError('Responda às cinco partes antes de enviar.');
+      if (!app) throw new UserError('Responda às 16 perguntas antes de enviar.');
       await allowlist.submit(app);
     });
     return i.editReply({ content: null, ...await dashboard() });

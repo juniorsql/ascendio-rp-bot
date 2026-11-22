@@ -58,6 +58,14 @@ export const sections: readonly Section[] = [
   },
 ];
 
+export const questions = sections.flatMap(section => section.questions);
+
+export function questionAt(id: string | undefined): Question {
+  const question = questions.find(item => item.id === id);
+  if (!question) throw new UserError('Selecione uma pergunta válida da Allowlist.');
+  return question;
+}
+
 export function loreLink(value: string): string {
   try {
     const url = new URL(value.trim());

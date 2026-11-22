@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { ChannelType, Collection, OverwriteType, PermissionFlagsBits, PermissionsBitField, type Client, type Guild, type MessageCreateOptions } from 'discord.js';
-import { answerForm, answersCard, applicationCard } from '../src/allowlist/cards.js';
-import { loreLink, sections } from '../src/allowlist/questions.js';
+import { answerForm, answersCard, applicationCard, reviewCard } from '../src/allowlist/cards.js';
+import { loreLink, questions } from '../src/allowlist/questions.js';
 import { Allowlist, type AllowlistConfig } from '../src/allowlist/service.js';
 import { AllowlistStore, newApplication } from '../src/allowlist/store.js';
+import { validateEmbeds } from '../src/validation/input.js';
 
 const guildId = '123456789012345678';
 const botId = '223456789012345678';
@@ -20,11 +21,21 @@ const config: AllowlistConfig = {
 };
 const fullPermissions = new PermissionsBitField(PermissionFlagsBits.Administrator);
 
-test('Allowlist organiza as 16 perguntas em cinco partes e exige o link salvo na última', () => {
-  assert.deepEqual(sections.flatMap(s => s.questions.map(q => Number(q.id))), Array.from({ length: 16 }, (_, i) => i + 1));
-  for (const [index, section] of sections.entries()) {
-    const modal = answerForm(String(index)).toJSON();
-    assert.equal(modal.components.length, section.questions.length + (index === 4 ? 1 : 0));
+test('Allowlist mostra as 16 perguntas em sequência com o campo abaixo do enunciado', () => {
+  assert.deepEqual(questions.map(q => Number(q.id)), Array.from({ length: 16 }, (_, i) => i + 1));
+  const app = newApplication(applicant);
+  for (const question of questions) app.answers[question.id] = 'a';
+  app.feedback = 'a'.repeat(800);
+  const dashboard = applicationCard(app, config.scheduleChannelId, config.resultChannelId);
+  validateEmbeds(dashboard.embeds);
+  const menu = dashboard.components[0]!.toJSON().components[0];
+  assert.ok(menu && 'options' in menu);
+  assert.deepEqual(menu.options.map(option => option.value), questions.map(q => q.id));
+  for (const question of questions) {
+    assert.ok(dashboard.embeds[0]?.description.includes(question.prompt));
+    const modal = answerForm(question.id).toJSON();
+    assert.equal(modal.components.length, question.id === '16' ? 3 : 2);
+    assert.deepEqual(modal.components[0], { type: 10, content: question.prompt });
   }
   const base = 'https://www.toptal.com/developers/hastebin';
   assert.equal(loreLink(base + '/historiaabc'), base + '/historiaabc');
@@ -34,7 +45,7 @@ test('Allowlist organiza as 16 perguntas em cinco partes e exige o link salvo na
   }
 });
 
-test('Allowlist restringe a revisão, salva o progresso e publica a aprovação final uma vez', async t => {
+for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restringe a revisão e publica uma vez o resultado ${decision}`, async t => {
   const dir = await mkdtemp(join(tmpdir(), 'ascendio-allowlist-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const staffRoles = new Set(config.staffRoleIds);
@@ -51,6 +62,7 @@ test('Allowlist restringe a revisão, salva o progresso e publica a aprovação 
   };
   const everyone = { id: guildId, type: OverwriteType.Role, allow: new PermissionsBitField(), deny: new PermissionsBitField(PermissionFlagsBits.ViewChannel) };
   const sent: Array<{ channelId: string; options: MessageCreateOptions }> = [];
+  let loseResultResponse = decision === 'rejected';
   const history = new Map<string, Collection<string, unknown>>();
   const client = { user: { id: botId }, channels: { fetch: async (channelId: string) => ({
     id: channelId, type: ChannelType.GuildText, guildId, guild, permissionsFor: () => fullPermissions,
@@ -62,6 +74,10 @@ test('Allowlist restringe a revisão, salva o progresso e publica a aprovação 
       const messages = history.get(channelId) ?? new Collection<string, unknown>();
       messages.set(id, { id, author: { id: botId }, createdTimestamp: Date.now(), content: options.content, embeds: options.embeds });
       history.set(channelId, messages);
+      if (channelId === config.resultChannelId && loseResultResponse) {
+        loseResultResponse = false;
+        throw Error('Resposta da publicação perdida.');
+      }
       return { id };
     },
   }) } } as unknown as Client;
@@ -74,7 +90,7 @@ test('Allowlist restringe a revisão, salva o progresso e publica a aprovação 
   const app = newApplication(applicant);
   app.character = 'Ada Bell';
   const link = 'https://www.toptal.com/developers/hastebin/historiaabc';
-  for (const question of sections.flatMap(section => section.questions)) app.answers[question.id] = question.id === '16' ? link : 'Minha resposta de teste.';
+  for (const question of questions) app.answers[question.id] = question.id === '16' ? link : 'Minha resposta de teste.';
   await service.store.save(app);
   const reopened = new AllowlistStore(dir);
   assert.deepEqual(await reopened.get(applicant), app);
@@ -85,17 +101,27 @@ test('Allowlist restringe a revisão, salva o progresso e publica a aprovação 
   assert.equal(sent[0]?.channelId, config.reviewChannelId);
   assert.doesNotMatch(JSON.stringify(sent[0]?.options), /Minha resposta|historiaabc/);
   assert.match(answersCard(app, '4').embeds[0]!.description!, /historiaabc/);
-  await assert.rejects(service.approveInterview(app, discordGuild, staff), /ainda precisa ser aprovada/);
+  assert.match(JSON.stringify(reviewCard(app).components), /Reprovar e publicar/);
+  await assert.rejects(service.publishDecision(app, discordGuild, staff, 'approved'), /etapa atual/);
   await service.approveForm(app, discordGuild, staff);
   assert.equal(app.stage, 'awaiting');
   assert.equal(applicantRoles.has(config.waitingRoleId), true);
   assert.match(applicationCard(app, config.scheduleChannelId, config.resultChannelId).embeds[0]!.description!, new RegExp(config.scheduleChannelId));
 
-  await service.approveInterview(app, discordGuild, staff);
-  await service.approveInterview(app, discordGuild, staff);
+  assert.match(JSON.stringify(reviewCard(app).components), /Reprovar e publicar/);
+  if (decision === 'rejected') {
+    await assert.rejects(service.publishDecision(app, discordGuild, staff, decision), /Resposta da publicação perdida/);
+    const pending = await reopened.get(applicant);
+    assert.equal(pending?.stage, 'publishing');
+    assert.equal(pending?.resultDecision, 'rejected');
+    await assert.rejects(service.publishDecision(app, discordGuild, staff, 'approved'), /outro resultado em publicação/);
+  }
+  await service.publishDecision(app, discordGuild, staff, decision);
+  await service.publishDecision(app, discordGuild, staff, decision);
   assert.equal(applicantRoles.size, 0);
-  assert.equal(app.stage, 'approved');
+  assert.equal(app.stage, decision);
   assert.equal(sent.filter(message => message.channelId === config.resultChannelId).length, 1);
   assert.deepEqual(sent[1]?.options.allowedMentions, { parse: [], users: [applicant] });
+  assert.match(JSON.stringify(sent[1]?.options.embeds), new RegExp(decision === 'approved' ? 'ALLOWLIST APROVADA' : 'ALLOWLIST REPROVADA'));
   assert.doesNotMatch(JSON.stringify(sent[1]?.options), /Minha resposta|historiaabc/);
 });
