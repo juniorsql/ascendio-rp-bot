@@ -121,6 +121,7 @@ export class Allowlist {
     app.reviewId = message.id;
     app.stage = 'review';
     delete app.feedback;
+    delete app.formDraft;
     await this.store.save(app);
   }
 

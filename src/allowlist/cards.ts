@@ -1,6 +1,7 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, escapeMarkdown, StringSelectMenuBuilder, type APIEmbed } from 'discord.js';
 import { safeText, UserError } from '../validation/input.js';
-import { hastebin, questions, sections } from './questions.js';
+import { questions, sections } from './questions.js';
+import { resumePage } from './form.js';
 import type { Application, Decision } from './store.js';
 
 const gold = 0xb69a60;
@@ -13,19 +14,15 @@ function button(action: string, label: string, style = ButtonStyle.Secondary) {
   return new ButtonBuilder().setCustomId(`al:${action}`).setLabel(label).setStyle(style);
 }
 
-function hastebinButton() {
-  return new ButtonBuilder().setLabel('Abrir Hastebin').setStyle(ButtonStyle.Link).setURL(hastebin);
-}
-
 export function panelCard() {
   return {
     embeds: [{
       title: '🪄 ASCENDIO ROLEPLAY | ALLOWLIST',
       color: gold,
-      description: 'Antes de iniciar sua jornada no mundo bruxo de 1940, queremos conhecer sua compreensão sobre Roleplay, as regras do servidor e o personagem que pretende interpretar.\n\nAbra o formulário, escreva suas respostas abaixo de cada pergunta e envie a ficha completa ao terminar. Para a pergunta 16, tenha em mãos o link da história do seu personagem no Hastebin.\n\n*Toda grande história começa com um personagem. A sua começa aqui.*',
+      description: 'Responda às 16 perguntas da Allowlist do Ascendio RP. Cada pergunta tem um campo próprio para digitar. Suas respostas ficam salvas conforme você avança.\n\nNa pergunta 16, cole o link da história do seu personagem no Hastebin.\n\n*Toda grande história começa com um personagem. A sua começa aqui.*',
       footer,
     }],
-    components: [new ActionRowBuilder<ButtonBuilder>().addComponents(button('home', 'Preencher formulário', ButtonStyle.Primary), hastebinButton())],
+    components: [new ActionRowBuilder<ButtonBuilder>().addComponents(button('home', 'Preencher formulário', ButtonStyle.Primary))],
     allowedMentions: silent,
   };
 }
@@ -34,7 +31,7 @@ export function applicationReady(app?: Application) {
   return Boolean(app?.character && questions.every(question => app.answers[question.id]));
 }
 
-export function applicationCard(app: Application | undefined, scheduleChannelId: string, resultChannelId: string) {
+export function applicationCard(app: Application | undefined, scheduleChannelId: string, resultChannelId: string, nextPage?: number) {
   const stage = app?.stage ?? 'draft';
   const states = {
     submitting: 'Seu envio ficou pendente. Use o botão abaixo para concluir.',
@@ -50,10 +47,14 @@ export function applicationCard(app: Application | undefined, scheduleChannelId:
     const color = stage === 'approved' ? green : stage === 'rejected' ? red : gold;
     return { embeds: [{ title: '📜 Minha Allowlist', description: states[stage], color, footer }], components, allowedMentions: silent };
   }
-  const description = app?.feedback
-    ? `**Ajustes solicitados pela equipe**\n${safeText(app.feedback)}`
-    : 'Abra seu formulário para escrever as respostas e enviar a ficha.';
-  components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(button('form', 'Abrir formulário', ButtonStyle.Primary), hastebinButton()));
+  const count = questions.filter(question => app?.answers[question.id] && (question.id !== '16' || app.character)).length;
+  const progress = `**${count} de ${questions.length} respostas salvas**`;
+  const feedback = app?.feedback ? `\n\n**Ajustes solicitados pela equipe**\n${safeText(app.feedback)}` : '';
+  const description = progress + feedback;
+  const page = nextPage ?? (app?.feedback ? 0 : resumePage(app));
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button(`page:${page}`, count ? 'Continuar' : 'Começar', ButtonStyle.Primary));
+  if (page > 0) row.addComponents(button('page:0', 'Revisar do início'));
+  components.push(row);
   return { embeds: [{ title: '📜 Minha Allowlist', description, color: gold, footer }], components, allowedMentions: silent };
 }
 

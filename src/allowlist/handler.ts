@@ -1,26 +1,27 @@
 import { MessageFlags, type ButtonInteraction, type Interaction, type ModalSubmitInteraction, type StringSelectMenuInteraction } from 'discord.js';
 import { form } from '../components/forms.js';
 import { snowflake, text, UserError } from '../validation/input.js';
-import { answersCard, applicationCard, sectionAt, silent } from './cards.js';
-import { allowlistForm, parseForm, readForm } from './form.js';
-import { answerLimit, loreLink, questionAt } from './questions.js';
+import { answersCard, applicationCard, applicationReady, sectionAt, silent } from './cards.js';
+import { allowlistForm, pageCount, pageQuestions, parseLegacyForm, readLegacyForm, restoreLegacyDraft, resumePage } from './form.js';
+import { answerLimit, loreLink, questionAt, type Question } from './questions.js';
 import type { Allowlist } from './service.js';
 import { newApplication } from './store.js';
 
 type Component = ButtonInteraction | ModalSubmitInteraction | StringSelectMenuInteraction;
 
-async function submitForm(i: ModalSubmitInteraction, allowlist: Allowlist) {
+async function submitLegacyForm(i: ModalSubmitInteraction, allowlist: Allowlist) {
   await i.deferReply({ flags: MessageFlags.Ephemeral });
   const { store, config } = allowlist;
   return store.run(i.user.id, async () => {
     const app = await store.get(i.user.id) ?? newApplication(i.user.id);
     if (app.stage !== 'draft') throw new UserError('Sua ficha já foi enviada. Consulte o status pelo painel.');
-    const values = readForm(id => i.fields.getTextInputValue(id));
+    const values = readLegacyForm(id => i.fields.getTextInputValue(id));
     try {
-      Object.assign(app, parseForm(values));
+      Object.assign(app, parseLegacyForm(values));
     } catch (error) {
       if (!(error instanceof UserError)) throw error;
       app.formDraft = values;
+      restoreLegacyDraft(app);
       await store.save(app);
       return i.editReply({ content: error.message, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId) });
     }
@@ -28,6 +29,38 @@ async function submitForm(i: ModalSubmitInteraction, allowlist: Allowlist) {
     await store.save(app);
     await allowlist.submit(app);
     return i.editReply(applicationCard(app, config.scheduleChannelId, config.resultChannelId));
+  });
+}
+
+async function saveAnswers(i: ModalSubmitInteraction, allowlist: Allowlist, prompts: readonly Question[], page?: number) {
+  if (i.isFromMessage() && i.message.flags.has(MessageFlags.Ephemeral)) await i.deferUpdate();
+  else await i.deferReply({ flags: MessageFlags.Ephemeral });
+  const { store, config } = allowlist;
+  return store.run(i.user.id, async () => {
+    const app = restoreLegacyDraft(await store.get(i.user.id)) ?? newApplication(i.user.id);
+    if (app.stage !== 'draft') throw new UserError('Sua ficha já foi enviada. Consulte o status no painel.');
+    let problem: string | undefined;
+    for (const question of prompts) {
+      try {
+        const value = i.fields.getTextInputValue(question.id);
+        if (question.id === '16') {
+          app.character = text(i.fields.getTextInputValue('character'), 80, 'Nome do personagem');
+          app.answers[question.id] = loreLink(value);
+        } else {
+          app.answers[question.id] = text(value, answerLimit, question.label);
+        }
+      } catch (error) {
+        if (!(error instanceof UserError)) throw error;
+        problem ??= error.message;
+      }
+    }
+    await store.save(app);
+    if (page === pageCount - 1 && !problem && applicationReady(app)) {
+      await allowlist.submit(app);
+      return i.editReply({ content: null, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId) });
+    }
+    const next = problem ? page : page === undefined || page === pageCount - 1 ? resumePage(app) : page + 1;
+    return i.editReply({ content: problem ?? null, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId, next) });
   });
 }
 
@@ -79,10 +112,11 @@ async function staffAction(i: Component, allowlist: Allowlist, action: string, u
 export async function allowlistInteraction(i: Interaction, allowlist: Allowlist | undefined) {
   if (!allowlist || !i.guild || i.guildId !== allowlist.guildId) throw new UserError('A Allowlist não está disponível aqui.');
   const { store, config } = allowlist;
-  const dashboard = async () => applicationCard(await store.get(i.user.id), config.scheduleChannelId, config.resultChannelId);
+  const load = async () => restoreLegacyDraft(await store.get(i.user.id));
+  const dashboard = async () => applicationCard(await load(), config.scheduleChannelId, config.resultChannelId);
   if (i.isChatInputCommand()) {
-    const app = await store.get(i.user.id);
-    if (!app || (app.stage === 'draft' && !app.feedback)) return i.showModal(allowlistForm(app));
+    const app = await load();
+    if (!app || (app.stage === 'draft' && !app.feedback)) return i.showModal(allowlistForm(resumePage(app), app));
     return i.reply({ ...applicationCard(app, config.scheduleChannelId, config.resultChannelId), flags: MessageFlags.Ephemeral });
   }
   if (!i.isButton() && !i.isModalSubmit() && !i.isStringSelectMenu()) return;
@@ -91,43 +125,32 @@ export async function allowlistInteraction(i: Interaction, allowlist: Allowlist 
     return staffAction(i, allowlist, action!, snowflake(key ?? ''), appId ?? '');
   }
   if (action === 'home' && i.isButton()) {
-    const app = await store.get(i.user.id);
-    if (!app || (app.stage === 'draft' && !app.feedback)) return i.showModal(allowlistForm(app));
+    const app = await load();
+    if (!app || (app.stage === 'draft' && !app.feedback)) return i.showModal(allowlistForm(resumePage(app), app));
     const view = applicationCard(app, config.scheduleChannelId, config.resultChannelId);
     return i.channelId === config.panelChannelId && !i.message.flags.has(MessageFlags.Ephemeral)
       ? i.reply({ ...view, flags: MessageFlags.Ephemeral })
       : i.update({ content: null, ...view });
   }
-  if ((i.isButton() && ['form', 'section', 'edit', 'next'].includes(action ?? '')) || (i.isStringSelectMenu() && action === 'choose')) {
-    const app = await store.get(i.user.id);
+  if ((i.isButton() && ['page', 'form', 'section', 'edit', 'next'].includes(action ?? '')) || (i.isStringSelectMenu() && action === 'choose')) {
+    const app = await load();
     if (app && app.stage !== 'draft') return i.update({ content: null, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId) });
-    return i.showModal(allowlistForm(app));
+    const page = action === 'page' ? Number(key) : resumePage(app);
+    return i.showModal(allowlistForm(page, app));
   }
-  if (action === 'submit-form' && i.isModalSubmit()) return submitForm(i, allowlist);
+  if (action === 'submit-form' && i.isModalSubmit()) return submitLegacyForm(i, allowlist);
+  if (action === 'answers' && i.isModalSubmit()) {
+    const page = Number(key);
+    return saveAnswers(i, allowlist, pageQuestions(page), page);
+  }
   if ((action === 'save-answer' || action === 'save') && i.isModalSubmit()) {
     const prompts = action === 'save' ? sectionAt(key).questions : [questionAt(key)];
-    if (i.isFromMessage() && i.message.flags.has(MessageFlags.Ephemeral)) await i.deferUpdate();
-    else await i.deferReply({ flags: MessageFlags.Ephemeral });
-    await store.run(i.user.id, async () => {
-      const app = await store.get(i.user.id) ?? newApplication(i.user.id);
-      if (app.stage !== 'draft') throw new UserError('Sua ficha já foi enviada. Consulte o status no painel.');
-      for (const question of prompts) {
-        const value = i.fields.getTextInputValue(question.id);
-        if (question.id === '16') {
-          app.character = text(i.fields.getTextInputValue('character'), 80, 'Nome do personagem');
-          app.answers[question.id] = loreLink(value);
-        } else {
-          app.answers[question.id] = text(value, answerLimit, question.label);
-        }
-      }
-      await store.save(app);
-    });
-    return i.editReply({ content: null, ...await dashboard() });
+    return saveAnswers(i, allowlist, prompts);
   }
   if (action === 'send' && i.isButton()) {
     await i.deferUpdate();
     await store.run(i.user.id, async () => {
-      const app = await store.get(i.user.id);
+      const app = await load();
       if (!app) throw new UserError('Responda às 16 perguntas antes de enviar.');
       await allowlist.submit(app);
     });
