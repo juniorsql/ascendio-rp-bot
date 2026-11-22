@@ -141,13 +141,17 @@ test('usuário comum é bloqueado, cargos publicam e configuração exige Gerenc
   assert.equal(authorized(member(PermissionFlagsBits.ManageGuild), config, true), true);
 });
 test('comandos e componentes serializam sem credenciais e respeitam o escopo de servidor', () => {
-  assert.equal(commands.length, 10); assert.equal(new Set(commands.map(c => c.name)).size, 10);
+  assert.equal(commands.length, 11); assert.equal(new Set(commands.map(c => c.name)).size, 11);
   const d = makeDraft(); assert.ok(controls(d)[0]!.toJSON().components.length >= 2);
   assert.equal(postForm('post:new:comunicado:123456789012345678').toJSON().components.length, 5);
   const composed = { ...d, post: { kind: 'comunicado' as const, title: 'Teste', description: 'Texto', image: '', thumbnail: '', fields: [] }, links: urlButtons('Site | https://example.com') };
   assert.equal(controls(composed).length, 5);
   assert.ok(controls(composed).every(row => row.toJSON().components.length <= 5));
-  for (const c of commands) { assert.deepEqual(c.contexts, [0]); if (!['ajuda', 'atendimentos'].includes(c.name)) assert.ok(c.default_member_permissions); }
+  for (const c of commands) {
+    assert.deepEqual(c.contexts, [0]);
+    if (['ajuda', 'atendimentos', 'allowlist'].includes(c.name)) assert.equal(c.default_member_permissions, undefined);
+    else assert.ok(c.default_member_permissions);
+  }
 });
 
 test('separador final aparece antes do encerramento personalizado e não inclui assinatura automática', () => {

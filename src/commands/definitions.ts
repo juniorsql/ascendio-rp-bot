@@ -6,6 +6,7 @@ const channels = [ChannelType.GuildText, ChannelType.GuildAnnouncement] as const
 const admin = (name: string, description: string, config = false) => new SlashCommandBuilder().setName(name).setDescription(description).setContexts(InteractionContextType.Guild)
   .setDefaultMemberPermissions(config ? PermissionFlagsBits.ManageGuild : PermissionFlagsBits.ManageMessages);
 export const commands = [
+  new SlashCommandBuilder().setName('allowlist').setDescription('Preencha sua ficha ou consulte o andamento da Allowlist.').setContexts(InteractionContextType.Guild),
   new SlashCommandBuilder().setName('saidas').setDescription('Consulte o registro privado de saídas do servidor.')
     .setContexts(InteractionContextType.Guild).setDefaultMemberPermissions(0)
     .addIntegerOption(o => o.setName('pagina').setDescription('Página do registro').setMinValue(1)),

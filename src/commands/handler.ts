@@ -14,7 +14,9 @@ import { ticketInteraction } from '../tickets/handler.js';
 import { publicationCard } from '../components/publication-card.js';
 import { downloadPublicationVideo, publicationVideo } from '../services/publication-video.js';
 import { youtubeUrl } from '../validation/youtube.js';
-export interface Context { client: Client; env: Env; store: Store; drafts: Drafts; tickets?: Tickets }
+import { allowlistInteraction } from '../allowlist/handler.js';
+import type { Allowlist } from '../allowlist/service.js';
+export interface Context { client: Client; env: Env; store: Store; drafts: Drafts; tickets?: Tickets; allowlist?: Allowlist }
 type Usable = ChatInputCommandInteraction | ModalSubmitInteraction | Extract<Interaction, { customId: string }>;
 const none = { parse: [] as never[], repliedUser: false };
 let videoPublicationInProgress = false;
@@ -131,6 +133,7 @@ async function configModal(i: ModalSubmitInteraction, ctx: Context) {
 }
 async function handle(i: Interaction, ctx: Context) {
   if (!i.isChatInputCommand() && !i.isModalSubmit() && !i.isButton() && !i.isStringSelectMenu() && !i.isUserSelectMenu()) return;
+  if ((i.isChatInputCommand() && i.commandName === 'allowlist') || ('customId' in i && i.customId.startsWith('al:'))) return allowlistInteraction(i, ctx.allowlist);
   if ((i.isChatInputCommand() && ['ticket', 'atendimentos'].includes(i.commandName)) || ('customId' in i && i.customId.startsWith('ticket:'))) return ticketInteraction(i, ctx);
   if (i.isChatInputCommand() && i.commandName === 'saidas') return showDepartures(i, ctx);
   if (i.isChatInputCommand() && i.commandName === 'ajuda') {
