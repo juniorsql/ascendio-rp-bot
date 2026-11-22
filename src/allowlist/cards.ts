@@ -14,6 +14,11 @@ function button(action: string, label: string, style = ButtonStyle.Secondary) {
   return new ButtonBuilder().setCustomId(`al:${action}`).setLabel(label).setStyle(style);
 }
 
+export function storyButton(app: Application) {
+  const url = app.answers['16'];
+  return url && url.length <= 512 ? new ButtonBuilder().setLabel('Abrir história').setStyle(ButtonStyle.Link).setURL(url) : undefined;
+}
+
 export function panelCard() {
   return {
     embeds: [{
@@ -88,6 +93,8 @@ export function reviewCard(app: Application) {
     const action = app.resultDecision === 'rejected' ? 'reject' : 'interview-pass';
     controls.addComponents(button(`${action}:${key}`, 'Concluir publicação', ButtonStyle.Primary));
   }
+  const story = storyButton(app);
+  if (story) controls.addComponents(story);
   const read = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder()
     .setCustomId(`al:read:${key}`).setPlaceholder('Ler respostas da ficha')
     .addOptions(sections.map((section, index) => ({ label: section.title, value: String(index) }))));
@@ -106,9 +113,17 @@ export function reviewCard(app: Application) {
 
 export function answersCard(app: Application, index: string) {
   const section = sectionAt(index);
-  const description = index === '4' ? `**História de ${safeText(escapeMarkdown(app.character))}**\n<${app.answers['16']}>` : undefined;
-  const answers: APIEmbed = { title: section.title, color: gold, description,
-    fields: description ? undefined : section.questions.map(q => ({ name: q.label, value: safeText(app.answers[q.id] ?? 'Resposta indisponível') })),
+  if (index === '4') {
+    const url = app.answers['16'];
+    const button = storyButton(app);
+    return {
+      embeds: [{ title: `História de ${safeText(escapeMarkdown(app.character))}`, url, color: gold }],
+      components: button ? [new ActionRowBuilder<ButtonBuilder>().addComponents(button)] : [],
+      allowedMentions: silent,
+    };
+  }
+  const answers: APIEmbed = { title: section.title, color: gold,
+    fields: section.questions.map(q => ({ name: q.label, value: safeText(app.answers[q.id] ?? 'Resposta indisponível') })),
   };
   return { embeds: [answers], allowedMentions: silent };
 }

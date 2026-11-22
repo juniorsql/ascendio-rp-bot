@@ -36,8 +36,8 @@ export function allowlistForm(page: number, app?: Application) {
       modal.addTextDisplayComponents(new TextDisplayBuilder().setContent('**16. Qual é a história do seu personagem?**\nConte sua origem, personalidade e motivações no mundo bruxo de 1940.'));
       modal.addLabelComponents(
         inputLabel('character', 'Nome do personagem', app?.character, 80, TextInputStyle.Short, 'Nome completo do personagem'),
-        inputLabel(question.id, 'Link da história', app?.answers[question.id], loreLinkLimit, TextInputStyle.Short, 'Cole o link compartilhável do Hastebin ou de outro site')
-          .setDescription('Use um link HTTPS com acesso liberado para a staff.'),
+        inputLabel(question.id, 'Link da história', app?.answers[question.id], loreLinkLimit, TextInputStyle.Short, 'Cole o endereço que abre a sua história')
+          .setDescription('Copie o link de compartilhamento do texto e cole aqui.'),
       );
       continue;
     }

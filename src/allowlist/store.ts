@@ -23,6 +23,7 @@ export interface Application {
   interviewerId?: string;
   rejectedById?: string;
   feedback?: string;
+  ownerResetRequest?: string;
 }
 
 export function newApplication(userId: string): Application {

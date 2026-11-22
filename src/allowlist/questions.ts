@@ -1,4 +1,4 @@
-import { publicHttpsUrl, UserError } from '../validation/input.js';
+import { UserError } from '../validation/input.js';
 
 export const answerLimit = 800;
 export const loreLinkLimit = 2048;
@@ -85,18 +85,18 @@ export function questionAt(id: string | undefined): Question {
 }
 
 export function loreLink(value: string): string {
-  const candidate = value.trim().replace(/^<([^<>]+)>$/, '$1');
-  if (!candidate || /\s/.test(candidate)) throw new UserError('Pergunta 16: cole apenas o link compartilhável da história.');
-  const webAddress = /^www\./i.test(candidate) ? `https://${candidate}` : candidate;
-  const link = publicHttpsUrl(webAddress, 'Link da história', loreLinkLimit);
-  const url = new URL(link);
-  const host = url.hostname.replace(/^www\./, '');
-  const path = url.pathname.replace(/\/$/, '');
-  const basePath = host === 'toptal.com' ? '/developers/hastebin' : '';
-  if ((host === 'hastebin.com' || host === 'toptal.com') && (
-    path === basePath || path === `${basePath}/share` || path === `${basePath}/raw`
-  ) && !url.hash && !url.search) {
-    throw new UserError('Pergunta 16: salve a história e cole o link gerado para compartilhar.');
+  const pasted = value.trim();
+  const markdown = /^\[[^\n]+?\]\(\s*(.+?)\s*\)$/.exec(pasted);
+  const address = (markdown?.[1] ?? pasted).replace(/^<([^<>]+)>$/, '$1');
+  const webAddress = /^[a-z][a-z\d+.-]*:\/\//i.test(address) ? address : `https://${address.replace(/^\/\//, '')}`;
+  try {
+    const url = new URL(webAddress);
+    if (address && !/\s/.test(address) && ['https:', 'http:'].includes(url.protocol)
+      && url.hostname.includes('.') && !url.username && !url.password && url.href.length <= loreLinkLimit) {
+      return url.href;
+    }
+  } catch {
+    // Uma entrada que não se parece com URL usa a mesma orientação.
   }
-  return link;
+  throw new UserError('Pergunta 16: cole o endereço da história, como o link copiado ao compartilhar o documento.');
 }

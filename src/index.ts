@@ -60,6 +60,14 @@ async function main(): Promise<void> {
       try { await register(env); registered = true; } catch (error) { log('registration_failed', { code: errorCode(error) }, 'error'); }
     }
     if (allowlist) {
+      const resetRequest = process.env.ALLOWLIST_RESET_OWNER_ONCE;
+      if (resetRequest) {
+        try {
+          await allowlist.resetOwnerTest(resetRequest);
+        } catch (error) {
+          log('allowlist_owner_test_reset_failed', { code: errorCode(error) }, 'error');
+        }
+      }
       try { log('allowlist_ready', { messageId: await allowlist.ensurePanel() }); }
       catch (error) { log('allowlist_setup_failed', { code: errorCode(error) }, 'error'); }
       void allowlist.refreshActiveReviews().catch(error => log('allowlist_review_upgrade_failed', { code: errorCode(error) }, 'warn'));

@@ -3,7 +3,7 @@ import { joinRole } from '../events/member-role.js';
 import { errorCode, log } from '../logs/logger.js';
 import { target } from '../services/discord.js';
 import { snowflake, UserError } from '../validation/input.js';
-import { applicationReady, panelCard, resultCard, reviewCard } from './cards.js';
+import { applicationReady, panelCard, resultCard, reviewCard, storyButton } from './cards.js';
 import { AllowlistStore, newApplication, type Application, type Decision } from './store.js';
 
 export interface AllowlistConfig {
@@ -99,6 +99,25 @@ export class Allowlist {
       return existing.id;
     }
     return (await panel.send({ ...card, nonce: `al-${this.config.panelChannelId}`, enforceNonce: true })).id;
+  }
+
+  async resetOwnerTest(request: string) {
+    const match = /^(\d{17,20}):([\da-f]{20})$/.exec(request);
+    if (!match) throw new Error('Pedido inválido de reinício da ficha de teste.');
+    const userId = match[1]!;
+    const nonce = match[2]!;
+    const guild = await this.client.guilds.fetch(this.guildId);
+    if (guild.ownerId !== userId) throw new Error('A conta indicada não é a dona do servidor.');
+    return this.store.run(userId, async () => {
+      const current = await this.store.get(userId);
+      if (current?.ownerResetRequest === nonce) return false;
+      await this.store.save({ ...newApplication(userId), ownerResetRequest: nonce });
+      log('allowlist_owner_test_reset', {
+        guildId: this.guildId,
+        action: `previousStage=${current?.stage ?? 'none'}, answers=${Object.keys(current?.answers ?? {}).length}, storyLinkSaved=${Boolean(current?.answers['16'])}`,
+      });
+      return true;
+    });
   }
 
   async submit(app: Application) {
@@ -206,7 +225,9 @@ export class Allowlist {
           const buttonLabel = app.stage === 'publishing' ? 'Concluir publicação' : 'Reprovar e publicar';
           const alreadyUpdated = message.components.some(row => 'components' in row
             && row.components.some(component => 'label' in component && component.label === buttonLabel));
-          if (!alreadyUpdated) await this.refreshReview(message, app);
+          const missingStory = storyButton(app) && !message.components.some(row => 'components' in row
+            && row.components.some(component => 'url' in component && component.url === app.answers['16']));
+          if (!alreadyUpdated || missingStory) await this.refreshReview(message, app);
         });
       } catch (error) {
         log('allowlist_review_upgrade_failed', { channelId: channel.id, code: errorCode(error) }, 'warn');

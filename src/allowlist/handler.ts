@@ -57,7 +57,10 @@ async function saveAnswers(i: ModalSubmitInteraction, allowlist: Allowlist, prom
     let next: number | undefined;
     if (problem) next = page ?? resumePage(app);
     else if (page !== undefined && page < pageCount - 1) next = page + 1;
-    else if (!applicationReady(app)) next = resumePage(app);
+    else if (!applicationReady(app)) {
+      next = resumePage(app);
+      if (page === pageCount - 1) problem = 'O link da história foi salvo. Ainda há respostas pendentes. Toque em Continuar para preenchê-las.';
+    }
     return i.editReply({ content: problem ?? null, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId, next) });
   });
 }

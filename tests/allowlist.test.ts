@@ -53,11 +53,41 @@ test('Allowlist exibe cada pergunta fixa acima de uma resposta inicialmente vazi
   assert.equal(loreLink(base + '/raw/historiaabc'), base + '/raw/historiaabc');
   const shared = 'https://hastebin.com/share/historiaabc?source=copy#trecho';
   assert.equal(loreLink(`<${shared}>`), shared);
+  assert.equal(loreLink(`[Minha história](${shared})`), shared);
+  assert.equal(loreLink('hastebin.com/share/historiaabc'), 'https://hastebin.com/share/historiaabc');
+  assert.equal(loreLink('http://example.org/historia'), 'http://example.org/historia');
+  assert.equal(loreLink(base), base);
   assert.equal(loreLink('www.toptal.com/developers/hastebin/historiaabc'), base + '/historiaabc');
   assert.equal(loreLink('https://docs.google.com/document/d/123/edit?usp=sharing'), 'https://docs.google.com/document/d/123/edit?usp=sharing');
-  for (const bad of [base, base + '/', 'https://hastebin.com/share/', 'Uma história', 'javascript:alert(1)', 'https://127.0.0.1/story']) {
-    assert.throws(() => loreLink(bad), /link|https/i);
+  for (const bad of ['Uma história', 'javascript:alert(1)', 'file://example.org/story', 'https://user:pass@example.org/story']) {
+    assert.throws(() => loreLink(bad), /endereço da história/i);
   }
+});
+
+test('reinicia apenas a ficha do dono e aplica o mesmo pedido uma vez', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'ascendio-allowlist-reset-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const client = { guilds: { fetch: async () => ({ ownerId: staff }) } } as unknown as Client;
+  const service = new Allowlist(client, guildId, config, dir);
+  await service.store.init();
+  const original = newApplication(staff);
+  original.stage = 'review';
+  original.answers['1'] = 'Dado de teste';
+  const other = newApplication(applicant);
+  await service.store.save(original);
+  await service.store.save(other);
+  const request = `${staff}:0123456789abcdefabcd`;
+  await assert.rejects(service.resetOwnerTest(`${applicant}:0123456789abcdefabcd`), /não é a dona/);
+  assert.equal(await service.resetOwnerTest(request), true);
+  const fresh = (await service.store.get(staff))!;
+  assert.notEqual(fresh.id, original.id);
+  assert.equal(fresh.stage, 'draft');
+  assert.deepEqual(fresh.answers, {});
+  fresh.answers['1'] = 'Novo teste';
+  await service.store.save(fresh);
+  assert.equal(await service.resetOwnerTest(request), false);
+  assert.deepEqual(await service.store.get(staff), fresh);
+  assert.deepEqual(await service.store.get(applicant), other);
 });
 
 test('Allowlist reaproveita respostas de rascunhos antigos e retoma da primeira pergunta pendente', () => {
@@ -146,7 +176,7 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
     assert.doesNotMatch(progress, /Enviar para análise/);
     assert.equal(sent.length, 0);
   }
-  assert.match(await submitPage(pageCount - 1, 'minha história'), /link compartilhável/);
+  assert.match(await submitPage(pageCount - 1, 'minha história'), /endereço da história/);
   assert.equal((await reopened.get(applicant))?.answers['15'], 'Minha resposta de teste.');
   assert.equal(sent.length, 0);
   assert.match(await submitPage(pageCount - 1), /Enviar para análise/);
@@ -164,8 +194,10 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   assert.equal(app.stage, 'review');
   assert.equal(applicantRoles.size, 0);
   assert.equal(sent[0]?.channelId, config.reviewChannelId);
-  assert.doesNotMatch(JSON.stringify(sent[0]?.options), /Minha resposta|historiaabc/);
-  assert.ok(answersCard(app, '4').embeds[0]!.description!.includes(`<${link}>`));
+  assert.doesNotMatch(JSON.stringify(sent[0]?.options), /Minha resposta/);
+  assert.ok(JSON.stringify(sent[0]?.options).includes(link));
+  assert.equal(answersCard(app, '4').embeds[0]?.url, link);
+  assert.ok(JSON.stringify(answersCard(app, '4').components).includes(link));
   assert.equal(nickname, 'Ada Bell');
   assert.equal(privateNotices.length, 0);
   assert.match(JSON.stringify(reviewCard(app).components), /Reprovar e publicar/);
