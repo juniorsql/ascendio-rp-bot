@@ -1,7 +1,7 @@
-import { UserError } from '../validation/input.js';
+import { publicHttpsUrl, UserError } from '../validation/input.js';
 
-export const hastebin = 'https://www.toptal.com/developers/hastebin';
 export const answerLimit = 800;
+export const loreLinkLimit = 2048;
 
 export interface Question {
   id: string;
@@ -60,6 +60,24 @@ export const sections: readonly Section[] = [
 
 export const questions = sections.flatMap(section => section.questions);
 
+export const shortQuestions = [
+  ['O que seu personagem realmente sabe?', 'Você conhece Harry Potter, mas ele acaba de chegar a Hogwarts. Como separa os conhecimentos?'],
+  ['Como você interpretaria uma derrota?', 'Seu personagem perdeu um duelo que você queria vencer. Como ele lida com as consequências?'],
+  ['Como reagiria ao discordar do professor?', 'Seu personagem acha que sabe mais. Considere a experiência do professor e seus próprios limites.'],
+  ['Como reagiria a uma discussão?', 'Dois bruxos discutem e seu personagem não sabe por quê. Ele interfere, observa ou pede ajuda?'],
+  ['Como conquistaria reconhecimento?', 'Seu personagem busca prestígio. Como ele o conquista sem exigir reconhecimento dos outros?'],
+  ['Pode entrar na Floresta Proibida?', 'Um estudante quer ir à noite, sem autorização nem companhia. O que dizem as regras? Explique.'],
+  ['Como lidaria com um segredo fora do RP?', 'Você descobriu um segredo de outro personagem fora do jogo. Como age dentro do RP?'],
+  ['Como obteria uma habilidade rara?', 'Como o Ascendio RP aprova Animagia, Legilimência ou vínculos com criaturas extraordinárias?'],
+  ['Como seu personagem vive em 1940?', 'Como adaptaria os costumes, conhecimentos e comportamentos do personagem à época?'],
+  ['Como reagiria às notícias de ataques?', 'Como os ataques noticiados pelo Profeta Diário afetariam sua rotina e suas decisões?'],
+  ['O que pensa sobre Grindelwald?', 'Como as tensões no mundo bruxo influenciam sua opinião e suas relações?'],
+  ['Como reagiria aos rumores da Floresta?', 'Investigaria, pediria ajuda ou evitaria o local? Considere sua personalidade e seus limites.'],
+  ['O que quer viver no Ascendio RP?', 'Quais histórias, atividades ou experiências mais despertam seu interesse?'],
+  ['O que já desmotivou você no RP?', 'Pense nas suas experiências em jogos e comunidades. O que atrapalhou sua diversão?'],
+  ['Como contribuiria com a comunidade?', 'Como você ajudaria a tornar o RP divertido, respeitoso e envolvente para todos?'],
+] as const;
+
 export function questionAt(id: string | undefined): Question {
   const question = questions.find(item => item.id === id);
   if (!question) throw new UserError('Selecione uma pergunta válida da Allowlist.');
@@ -67,15 +85,18 @@ export function questionAt(id: string | undefined): Question {
 }
 
 export function loreLink(value: string): string {
-  try {
-    const url = new URL(value.trim());
-    const validHost = url.hostname === 'www.toptal.com' || url.hostname === 'toptal.com';
-    const paste = /^\/developers\/hastebin\/(?:raw\/)?([a-zA-Z0-9]{3,80})(?:\.[a-zA-Z0-9]{1,12})?\/?$/.exec(url.pathname);
-    if (url.protocol === 'https:' && validHost && !url.port && !url.username && !url.password && paste) {
-      return `${hastebin}/${paste[1]}`;
-    }
-  } catch {
-    // O formulário usa a mesma mensagem para endereços inválidos e links incompletos.
+  const candidate = value.trim().replace(/^<([^<>]+)>$/, '$1');
+  if (!candidate || /\s/.test(candidate)) throw new UserError('Pergunta 16: cole apenas o link compartilhável da história.');
+  const webAddress = /^www\./i.test(candidate) ? `https://${candidate}` : candidate;
+  const link = publicHttpsUrl(webAddress, 'Link da história', loreLinkLimit);
+  const url = new URL(link);
+  const host = url.hostname.replace(/^www\./, '');
+  const path = url.pathname.replace(/\/$/, '');
+  const basePath = host === 'toptal.com' ? '/developers/hastebin' : '';
+  if ((host === 'hastebin.com' || host === 'toptal.com') && (
+    path === basePath || path === `${basePath}/share` || path === `${basePath}/raw`
+  ) && !url.hash && !url.search) {
+    throw new UserError('Pergunta 16: salve a história e cole o link gerado para compartilhar.');
   }
-  throw new UserError('Questão 16: cole o link do texto salvo no Hastebin da Toptal.');
+  return link;
 }

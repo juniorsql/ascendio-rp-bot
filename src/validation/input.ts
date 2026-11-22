@@ -10,7 +10,7 @@ export function snowflake(value: string, label = 'ID'): string {
   if (!/^[0-9]{17,20}$/.test(value)) throw new UserError(`${label} deve ser um ID válido do Discord.`);
   return value;
 }
-function publicHttpsUrl(value: string, label: string, max: number): string {
+export function publicHttpsUrl(value: string, label: string, max: number): string {
   if (!value.trim()) return '';
   let url: URL;
   try { url = new URL(value.trim()); } catch { throw new UserError(`${label}: informe uma URL HTTPS válida.`); }
@@ -18,7 +18,7 @@ function publicHttpsUrl(value: string, label: string, max: number): string {
   if (url.protocol !== 'https:' || url.username || url.password || url.port || isIP(host) || !host.includes('.') || /(^|\.)(localhost|local|internal|test|invalid)$/.test(host) || url.href.length > max) {
     throw new UserError(`${label}: use HTTPS em um domínio público, sem credenciais, IP ou porta personalizada; máximo de ${max} caracteres.`);
   }
-  // Não fazemos requisições ao endereço: o cliente do Discord renderiza a imagem.
+  // A validação verifica somente o formato, sem acessar o endereço informado.
   return url.href;
 }
 export function imageUrl(value: string): string { return publicHttpsUrl(value, 'Imagem', 2048); }

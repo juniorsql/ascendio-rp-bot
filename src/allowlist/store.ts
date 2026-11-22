@@ -18,6 +18,8 @@ export interface Application {
   reviewId?: string;
   resultId?: string;
   reviewerId?: string;
+  formApprovalDm?: 'sent' | 'failed';
+  nicknameApplied?: boolean;
   interviewerId?: string;
   rejectedById?: string;
   feedback?: string;

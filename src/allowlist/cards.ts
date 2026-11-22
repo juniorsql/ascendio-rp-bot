@@ -17,9 +17,9 @@ function button(action: string, label: string, style = ButtonStyle.Secondary) {
 export function panelCard() {
   return {
     embeds: [{
-      title: '🪄 ASCENDIO ROLEPLAY | ALLOWLIST',
+      title: '✨ Seja bem-vindo à Allowlist!',
       color: gold,
-      description: 'Responda às 16 perguntas da Allowlist do Ascendio RP. Suas respostas ficam salvas como rascunho conforme você avança. Na pergunta 16, cole o link da história do seu personagem no Hastebin.\n\nQuando terminar, use **Enviar para análise** para entregar a ficha à staff.\n\n*Toda grande história começa com um personagem. A sua começa aqui.*',
+      description: 'Você está prestes a dar o primeiro passo no mundo bruxo do Ascendio RP. Queremos conhecer seu jeito de jogar e a história do personagem que você vai trazer para Hogwarts.\n\nResponda com calma. Toque em **Continuar** para avançar e, na última pergunta, cole o link da sua história. Quando terminar, clique em **Enviar para análise**.\n\n**Boa sorte! A gente se vê em Hogwarts.**',
       footer,
     }],
     components: [new ActionRowBuilder<ButtonBuilder>().addComponents(button('home', 'Preencher formulário', ButtonStyle.Primary))],
@@ -35,7 +35,7 @@ export function applicationCard(app: Application | undefined, scheduleChannelId:
   const stage = app?.stage ?? 'draft';
   const states = {
     submitting: 'Seu envio ficou pendente. Use o botão abaixo para concluir.',
-    review: 'Sua ficha está com a equipe para análise.',
+    review: 'Sua ficha está com a equipe para análise.' + (app?.nicknameApplied === false ? '\nO Discord recusou a atualização do seu apelido neste servidor.' : ''),
     awaiting: `Sua ficha foi aprovada. Envie sua disponibilidade em <#${scheduleChannelId}> para combinar a entrevista.`,
     publishing: 'A equipe concluiu sua avaliação. O resultado está sendo publicado.',
     approved: `Sua entrevista foi aprovada! Confira o resultado em <#${resultChannelId}>.`,
@@ -55,8 +55,8 @@ export function applicationCard(app: Application | undefined, scheduleChannelId:
   const page = nextPage ?? (app?.feedback ? 0 : resumePage(app));
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(ready
     ? button('send', 'Enviar para análise', ButtonStyle.Success)
-    : button(`page:${page}`, count ? 'Continuar' : 'Começar', ButtonStyle.Primary));
-  if (ready || page > 0) row.addComponents(button('page:0', 'Revisar do início'));
+    : button(`page-v2:${page}`, count ? 'Continuar' : 'Começar', ButtonStyle.Primary));
+  if (ready || page > 0) row.addComponents(button('page-v2:0', 'Revisar do início'));
   components.push(row);
   return { embeds: [{ title: '📜 Minha Allowlist', description, color: gold, footer }], components, allowedMentions: silent };
 }
@@ -106,7 +106,7 @@ export function reviewCard(app: Application) {
 
 export function answersCard(app: Application, index: string) {
   const section = sectionAt(index);
-  const description = index === '4' ? `[Ler a história de ${safeText(escapeMarkdown(app.character))} no Hastebin](${app.answers['16']})` : undefined;
+  const description = index === '4' ? `**História de ${safeText(escapeMarkdown(app.character))}**\n<${app.answers['16']}>` : undefined;
   const answers: APIEmbed = { title: section.title, color: gold, description,
     fields: description ? undefined : section.questions.map(q => ({ name: q.label, value: safeText(app.answers[q.id] ?? 'Resposta indisponível') })),
   };

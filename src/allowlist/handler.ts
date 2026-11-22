@@ -83,6 +83,7 @@ async function staffAction(i: Component, allowlist: Allowlist, action: string, u
     if (action === 'form-pass' && i.isButton()) {
       await allowlist.approveForm(app, guild, i.user.id);
       confirmation = `Formulário aprovado. O candidato pode combinar o horário em <#${allowlist.config.scheduleChannelId}>.`;
+      if (app.formApprovalDm === 'failed') confirmation += ' O Discord recusou o envio da mensagem privada.';
     } else if ((action === 'interview-pass' || action === 'reject') && i.isButton()) {
       const decision = action === 'reject' ? 'rejected' : 'approved';
       try {
@@ -130,17 +131,18 @@ export async function allowlistInteraction(i: Interaction, allowlist: Allowlist 
       ? i.reply({ ...view, flags: MessageFlags.Ephemeral })
       : i.update({ content: null, ...view });
   }
-  if ((i.isButton() && ['page', 'form', 'section', 'edit', 'next'].includes(action ?? '')) || (i.isStringSelectMenu() && action === 'choose')) {
+  if ((i.isButton() && ['page-v2', 'page', 'form', 'section', 'edit', 'next'].includes(action ?? '')) || (i.isStringSelectMenu() && action === 'choose')) {
     const app = await load();
     if (app && app.stage !== 'draft') return i.update({ content: null, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId) });
-    const page = action === 'page' ? Number(key) : resumePage(app);
+    const page = action === 'page-v2' ? Number(key) : action === 'page' && key === '0' ? 0 : resumePage(app);
     return i.showModal(allowlistForm(page, app));
   }
   if (action === 'submit-form' && i.isModalSubmit()) return submitLegacyForm(i, allowlist);
-  if (action === 'answers' && i.isModalSubmit()) {
+  if (action === 'answers-v2' && i.isModalSubmit()) {
     const page = Number(key);
     return saveAnswers(i, allowlist, pageQuestions(page), page);
   }
+  if (action === 'answers' && i.isModalSubmit()) return saveAnswers(i, allowlist, pageQuestions(Number(key), 2));
   if ((action === 'save-answer' || action === 'save') && i.isModalSubmit()) {
     const prompts = action === 'save' ? sectionAt(key).questions : [questionAt(key)];
     return saveAnswers(i, allowlist, prompts);

@@ -119,6 +119,15 @@ export class Allowlist {
       message.author.id === this.client.user?.id && message.embeds[0]?.footer?.text === `Ficha ${app.id}`);
     const message = existing || await channel.send({ ...reviewCard(app), nonce: `al-r-${app.id}`, enforceNonce: true });
     app.reviewId = message.id;
+    try {
+      const member = await channel.guild.members.fetch({ user: app.userId, force: true, cache: false });
+      const nickname = app.character.slice(0, 32).replace(/[\uD800-\uDBFF]$/, '').trimEnd();
+      if (member.nickname !== nickname) await member.setNickname(nickname, 'Nome do personagem na Allowlist');
+      app.nicknameApplied = true;
+    } catch (error) {
+      app.nicknameApplied = false;
+      log('allowlist_nickname_failed', { guildId: this.guildId, userId: app.userId, code: errorCode(error) }, 'warn');
+    }
     app.stage = 'review';
     delete app.feedback;
     delete app.formDraft;
@@ -126,14 +135,30 @@ export class Allowlist {
   }
 
   async approveForm(app: Application, guild: Guild, reviewerId: string) {
-    if (app.stage === 'awaiting') return;
-    if (app.stage !== 'review') throw new UserError('Esta ficha já passou pela análise.');
-    const role = await joinRole(guild, this.config.waitingRoleId);
-    const candidate = await guild.members.fetch({ user: app.userId, force: true, cache: false });
-    if (candidate.pending) throw new UserError('O candidato precisa concluir a entrada no Discord antes de receber o cargo.');
-    await candidate.roles.add(role.id, 'Formulário de Allowlist aprovado');
-    app.stage = 'awaiting';
-    app.reviewerId = reviewerId;
+    if (app.stage !== 'review' && app.stage !== 'awaiting') throw new UserError('Esta ficha já passou pela análise.');
+    if (app.stage === 'review') {
+      const role = await joinRole(guild, this.config.waitingRoleId);
+      const candidate = await guild.members.fetch({ user: app.userId, force: true, cache: false });
+      if (candidate.pending) throw new UserError('O candidato precisa concluir a entrada no Discord antes de receber o cargo.');
+      await candidate.roles.add(role.id, 'Formulário de Allowlist aprovado');
+      app.stage = 'awaiting';
+      app.reviewerId = reviewerId;
+      await this.store.save(app);
+    }
+    if (app.formApprovalDm) return;
+    try {
+      await this.client.users.send(app.userId, {
+        content: '✨ **Seu formulário da Allowlist foi aprovado!**\n\nVocê deu mais um passo para entrar no Ascendio RP. Envie sua disponibilidade no chat de agendamento para combinar o horário com a staff. Boa sorte!\n\n'
+          + `[Agendar entrevista](https://discord.com/channels/${this.guildId}/${this.config.scheduleChannelId})`,
+        allowedMentions: { parse: [] },
+        nonce: `al-d-${app.id}`,
+        enforceNonce: true,
+      });
+      app.formApprovalDm = 'sent';
+    } catch (error) {
+      app.formApprovalDm = 'failed';
+      log('allowlist_approval_dm_failed', { guildId: this.guildId, userId: app.userId, code: errorCode(error) }, 'warn');
+    }
     await this.store.save(app);
   }
 

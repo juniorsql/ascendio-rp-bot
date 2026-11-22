@@ -1,6 +1,6 @@
 import { LabelBuilder, ModalBuilder, TextDisplayBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { text, UserError } from '../validation/input.js';
-import { answerLimit, loreLink, questions, type Question } from './questions.js';
+import { answerLimit, loreLink, loreLinkLimit, questions, shortQuestions, type Question } from './questions.js';
 import type { Application } from './store.js';
 
 const legacyBlocks = [
@@ -9,13 +9,13 @@ const legacyBlocks = [
 const fieldId = (index: number) => `questions-${index + 1}`;
 const heading = (question: Question) => `${question.id}. ${question.prompt}\n`;
 
-const questionsPerPage = 2;
+const questionsPerPage = 3;
 export const pageCount = Math.ceil(questions.length / questionsPerPage);
 
-export function pageQuestions(page: number) {
-  if (!Number.isInteger(page) || page < 0 || page >= pageCount) throw new UserError('Página inválida da Allowlist.');
-  const start = page * questionsPerPage;
-  return questions.slice(start, start + questionsPerPage);
+export function pageQuestions(page: number, pageSize = questionsPerPage) {
+  if (!Number.isInteger(page) || page < 0 || page * pageSize >= questions.length) throw new UserError('Página inválida da Allowlist.');
+  const start = page * pageSize;
+  return questions.slice(start, start + pageSize);
 }
 
 export function resumePage(app?: Application) {
@@ -30,15 +30,20 @@ function inputLabel(id: string, label: string, value: string | undefined, max: n
 }
 
 export function allowlistForm(page: number, app?: Application) {
-  const modal = new ModalBuilder().setCustomId(`al:answers:${page}`).setTitle(`Allowlist • ${page + 1} de ${pageCount}`);
+  const modal = new ModalBuilder().setCustomId(`al:answers-v2:${page}`).setTitle(`Allowlist • ${page + 1} de ${pageCount}`);
   for (const question of pageQuestions(page)) {
-    const lore = question.id === '16';
-    if (lore) modal.addLabelComponents(inputLabel('character', 'Nome do personagem', app?.character, 80, TextInputStyle.Short, 'Nome completo do personagem'));
-    modal.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${question.id}.** ${question.prompt}`));
-    modal.addLabelComponents(lore
-      ? inputLabel(question.id, 'Link da história no Hastebin', app?.answers[question.id], 200, TextInputStyle.Short, 'Cole o link da história salva')
-        .setDescription('Após salvar, use “Enviar para análise” na próxima mensagem.')
-      : inputLabel(question.id, 'Sua resposta', app?.answers[question.id], answerLimit, TextInputStyle.Paragraph, 'Escreva sua resposta aqui'));
+    if (question.id === '16') {
+      modal.addTextDisplayComponents(new TextDisplayBuilder().setContent('**16. Qual é a história do seu personagem?**\nConte sua origem, personalidade e motivações no mundo bruxo de 1940.'));
+      modal.addLabelComponents(
+        inputLabel('character', 'Nome do personagem', app?.character, 80, TextInputStyle.Short, 'Nome completo do personagem'),
+        inputLabel(question.id, 'Link da história', app?.answers[question.id], loreLinkLimit, TextInputStyle.Short, 'Cole o link compartilhável do Hastebin ou de outro site')
+          .setDescription('Use um link HTTPS com acesso liberado para a staff.'),
+      );
+      continue;
+    }
+    const [label, context] = shortQuestions[Number(question.id) - 1]!;
+    modal.addLabelComponents(inputLabel(question.id, `${question.id}. ${label}`, app?.answers[question.id], answerLimit, TextInputStyle.Paragraph, 'Escreva sua resposta aqui')
+      .setDescription(context));
   }
   if (page < pageCount - 1) {
     modal.addTextDisplayComponents(new TextDisplayBuilder().setContent('-# O botão Enviar salva seu rascunho. Depois, toque em Continuar.'));

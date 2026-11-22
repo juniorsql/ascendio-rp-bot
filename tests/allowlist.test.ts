@@ -24,20 +24,24 @@ const fullPermissions = new PermissionsBitField(PermissionFlagsBits.Administrato
 
 test('Allowlist exibe cada pergunta fixa acima de uma resposta inicialmente vazia', () => {
   const questionIds = [];
+  assert.deepEqual(Array.from({ length: pageCount }, (_, page) => pageQuestions(page).length), [3, 3, 3, 3, 3, 1]);
   for (let page = 0; page < pageCount; page++) {
     const { components } = allowlistForm(page).toJSON();
     assert.ok(components.length <= 5);
     for (const question of pageQuestions(page)) {
       questionIds.push(Number(question.id));
-      const index = components.findIndex(component => component.type === ComponentType.TextDisplay && component.content === `**${question.id}.** ${question.prompt}`);
-      assert.ok(index >= 0);
-      const label = components[index + 1];
+      const label = components.find(component => component.type === ComponentType.Label && component.component.type === ComponentType.TextInput
+        && component.component.custom_id === question.id);
       assert.ok(label?.type === ComponentType.Label && label.component.type === ComponentType.TextInput);
       assert.equal(label.component.custom_id, question.id);
       assert.equal(label.component.value, undefined);
       if (question.id === '16') {
-        assert.equal(label.label, 'Link da história no Hastebin');
+        assert.equal(label.label, 'Link da história');
+        assert.equal(label.component.max_length, 2048);
         assert.equal(label.component.style, 1);
+      } else {
+        assert.match(label.label, new RegExp(`^${question.id}\\. .+\\?$`));
+        assert.ok(label.description);
       }
     }
   }
@@ -46,9 +50,13 @@ test('Allowlist exibe cada pergunta fixa acima de uma resposta inicialmente vazi
 
   const base = 'https://www.toptal.com/developers/hastebin';
   assert.equal(loreLink(base + '/historiaabc'), base + '/historiaabc');
-  assert.equal(loreLink(base + '/raw/historiaabc'), base + '/historiaabc');
-  for (const bad of [base, base + '/', 'Uma história', 'https://toptal.com.example.org/developers/hastebin/historiaabc']) {
-    assert.throws(() => loreLink(bad), /link do texto salvo/);
+  assert.equal(loreLink(base + '/raw/historiaabc'), base + '/raw/historiaabc');
+  const shared = 'https://hastebin.com/share/historiaabc?source=copy#trecho';
+  assert.equal(loreLink(`<${shared}>`), shared);
+  assert.equal(loreLink('www.toptal.com/developers/hastebin/historiaabc'), base + '/historiaabc');
+  assert.equal(loreLink('https://docs.google.com/document/d/123/edit?usp=sharing'), 'https://docs.google.com/document/d/123/edit?usp=sharing');
+  for (const bad of [base, base + '/', 'https://hastebin.com/share/', 'Uma história', 'javascript:alert(1)', 'https://127.0.0.1/story']) {
+    assert.throws(() => loreLink(bad), /link|https/i);
   }
 });
 
@@ -57,8 +65,8 @@ test('Allowlist reaproveita respostas de rascunhos antigos e retoma da primeira 
   app.formDraft = [questions.slice(0, 3).map(q => `${q.id}. ${q.prompt}\nResposta: ${q.id === '3' ? '' : `Resposta da pessoa ${q.id}`}`).join('\n\n')];
   restoreLegacyDraft(app);
   assert.deepEqual(app.answers, { '1': 'Resposta da pessoa 1', '2': 'Resposta da pessoa 2' });
-  assert.equal(resumePage(app), 1);
-  const first = allowlistForm(0, app).toJSON().components[1];
+  assert.equal(resumePage(app), 0);
+  const first = allowlistForm(0, app).toJSON().components[0];
   assert.ok(first?.type === ComponentType.Label && first.component.type === ComponentType.TextInput);
   assert.equal(first.component.value, 'Resposta da pessoa 1');
 });
@@ -68,9 +76,11 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   t.after(() => rm(dir, { recursive: true, force: true }));
   const staffRoles = new Set(config.staffRoleIds);
   const applicantRoles = new Set<string>();
+  const privateNotices: Array<{ userId: string; options: MessageCreateOptions }> = [];
+  let nickname: string | undefined;
   const waiting = { id: config.waitingRoleId, managed: false };
   const bot = { permissions: fullPermissions, roles: { highest: { comparePositionTo: () => 1 } } };
-  const candidate = { permissions: new PermissionsBitField(), roles: {
+  const candidate = { permissions: new PermissionsBitField(), setNickname: async (name: string) => { nickname = name; }, roles: {
     cache: applicantRoles, add: async (id: string) => { applicantRoles.add(id); }, remove: async (id: string) => { applicantRoles.delete(id); },
   } };
   const guild = { id: guildId, ownerId: staff, roles: { fetch: async () => waiting },
@@ -82,7 +92,12 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   const sent: Array<{ channelId: string; options: MessageCreateOptions }> = [];
   let loseResultResponse = decision === 'rejected';
   const history = new Map<string, Collection<string, unknown>>();
-  const client = { user: { id: botId }, channels: { fetch: async (channelId: string) => ({
+  const client = { user: { id: botId },
+    users: { send: async (userId: string, options: MessageCreateOptions) => {
+      privateNotices.push({ userId, options });
+      if (decision === 'rejected') throw Object.assign(new Error('DM bloqueada'), { code: 50007 });
+    } },
+    channels: { fetch: async (channelId: string) => ({
     id: channelId, type: ChannelType.GuildText, guildId, guild, permissionsFor: () => fullPermissions,
     permissionOverwrites: { cache: new Collection([[guildId, everyone]]) },
     messages: { fetch: async () => history.get(channelId) ?? new Collection() },
@@ -106,14 +121,14 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   await service.requireStaff(discordGuild, staff);
 
   const app = newApplication(applicant);
-  const link = 'https://www.toptal.com/developers/hastebin/historiaabc';
+  const link = 'https://hastebin.com/share/historiaabc?source=copy#trecho';
   await service.store.save(app);
   const reopened = new AllowlistStore(dir);
   assert.deepEqual(await reopened.get(applicant), app);
   async function submitPage(page: number, lore = link) {
     const replies: unknown[] = [];
     const interaction = {
-      user: { id: applicant }, guild: discordGuild, guildId, customId: `al:answers:${page}`,
+      user: { id: applicant }, guild: discordGuild, guildId, customId: `al:answers-v2:${page}`,
       isChatInputCommand: () => false, isButton: () => false, isStringSelectMenu: () => false, isModalSubmit: () => true,
       isFromMessage: () => page > 0, message: { flags: { has: () => true } },
       fields: { getTextInputValue: (id: string) => id === 'character' ? 'Ada Bell' : id === '16' ? lore : 'Minha resposta de teste.' },
@@ -131,12 +146,13 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
     assert.doesNotMatch(progress, /Enviar para análise/);
     assert.equal(sent.length, 0);
   }
-  assert.match(await submitPage(pageCount - 1, 'minha história'), /link do texto salvo/);
+  assert.match(await submitPage(pageCount - 1, 'minha história'), /link compartilhável/);
   assert.equal((await reopened.get(applicant))?.answers['15'], 'Minha resposta de teste.');
   assert.equal(sent.length, 0);
   assert.match(await submitPage(pageCount - 1), /Enviar para análise/);
   assert.equal((await reopened.get(applicant))?.stage, 'draft');
   assert.equal(sent.length, 0);
+  assert.equal(nickname, undefined);
   const confirmation: unknown[] = [];
   await allowlistInteraction({
     user: { id: applicant }, guild: discordGuild, guildId, customId: 'al:send',
@@ -149,10 +165,17 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   assert.equal(applicantRoles.size, 0);
   assert.equal(sent[0]?.channelId, config.reviewChannelId);
   assert.doesNotMatch(JSON.stringify(sent[0]?.options), /Minha resposta|historiaabc/);
-  assert.match(answersCard(app, '4').embeds[0]!.description!, /historiaabc/);
+  assert.ok(answersCard(app, '4').embeds[0]!.description!.includes(`<${link}>`));
+  assert.equal(nickname, 'Ada Bell');
+  assert.equal(privateNotices.length, 0);
   assert.match(JSON.stringify(reviewCard(app).components), /Reprovar e publicar/);
   await assert.rejects(service.publishDecision(app, discordGuild, staff, 'approved'), /etapa atual/);
   await service.approveForm(app, discordGuild, staff);
+  await service.approveForm(app, discordGuild, staff);
+  assert.equal(privateNotices.length, 1);
+  assert.equal(app.formApprovalDm, decision === 'approved' ? 'sent' : 'failed');
+  assert.equal(privateNotices[0]?.userId, applicant);
+  assert.match(privateNotices[0]?.options.content ?? '', new RegExp(config.scheduleChannelId));
   assert.equal(app.stage, 'awaiting');
   assert.equal(applicantRoles.has(config.waitingRoleId), true);
   assert.match(applicationCard(app, config.scheduleChannelId, config.resultChannelId).embeds[0]!.description!, new RegExp(config.scheduleChannelId));
@@ -169,6 +192,7 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   await service.publishDecision(app, discordGuild, staff, decision);
   assert.equal(applicantRoles.size, 0);
   assert.equal(app.stage, decision);
+  assert.equal(privateNotices.length, 1);
   assert.equal(sent.filter(message => message.channelId === config.resultChannelId).length, 1);
   assert.deepEqual(sent[1]?.options.allowedMentions, { parse: [], users: [applicant] });
   assert.match(JSON.stringify(sent[1]?.options.embeds), new RegExp(decision === 'approved' ? 'ALLOWLIST APROVADA' : 'ALLOWLIST REPROVADA'));
