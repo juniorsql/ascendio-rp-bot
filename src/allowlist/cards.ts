@@ -1,6 +1,6 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, escapeMarkdown, LabelBuilder, ModalBuilder, StringSelectMenuBuilder, TextDisplayBuilder, TextInputBuilder, TextInputStyle, type APIEmbed } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, escapeMarkdown, StringSelectMenuBuilder, type APIEmbed } from 'discord.js';
 import { safeText, UserError } from '../validation/input.js';
-import { answerLimit, hastebin, questionAt, questions, sections } from './questions.js';
+import { hastebin, questions, sections } from './questions.js';
 import type { Application, Decision } from './store.js';
 
 const gold = 0xb69a60;
@@ -13,29 +13,25 @@ function button(action: string, label: string, style = ButtonStyle.Secondary) {
   return new ButtonBuilder().setCustomId(`al:${action}`).setLabel(label).setStyle(style);
 }
 
+function hastebinButton() {
+  return new ButtonBuilder().setLabel('Abrir Hastebin').setStyle(ButtonStyle.Link).setURL(hastebin);
+}
+
 export function panelCard() {
   return {
     embeds: [{
       title: '🪄 ASCENDIO ROLEPLAY | ALLOWLIST',
       color: gold,
-      description: 'Antes de iniciar sua jornada no mundo bruxo de 1940, queremos conhecer sua compreensão sobre Roleplay, as regras do servidor e o personagem que pretende interpretar.\n\nResponda às 16 perguntas com suas próprias palavras. Se a equipe aprovar sua ficha, você receberá o cargo **Aguardando Entrevista** para combinar o horário com a staff.\n\n*Toda grande história começa com um personagem. A sua começa aqui.*',
+      description: 'Antes de iniciar sua jornada no mundo bruxo de 1940, queremos conhecer sua compreensão sobre Roleplay, as regras do servidor e o personagem que pretende interpretar.\n\nAbra o formulário, escreva suas respostas abaixo de cada pergunta e envie a ficha completa ao terminar. Para a pergunta 16, tenha em mãos o link da história do seu personagem no Hastebin.\n\n*Toda grande história começa com um personagem. A sua começa aqui.*',
       footer,
     }],
-    components: [new ActionRowBuilder<ButtonBuilder>().addComponents(button('home', 'Abrir minha Allowlist', ButtonStyle.Primary))],
+    components: [new ActionRowBuilder<ButtonBuilder>().addComponents(button('home', 'Preencher formulário', ButtonStyle.Primary), hastebinButton())],
     allowedMentions: silent,
   };
 }
 
 export function applicationReady(app?: Application) {
-  return !nextQuestion(app);
-}
-
-function answered(id: string, app?: Application) {
-  return Boolean(app?.answers[id] && (id !== '16' || app.character));
-}
-
-export function nextQuestion(app?: Application) {
-  return questions.find(question => !answered(question.id, app));
+  return Boolean(app?.character && questions.every(question => app.answers[question.id]));
 }
 
 export function applicationCard(app: Application | undefined, scheduleChannelId: string, resultChannelId: string) {
@@ -48,51 +44,22 @@ export function applicationCard(app: Application | undefined, scheduleChannelId:
     approved: `Sua entrevista foi aprovada! Confira o resultado em <#${resultChannelId}>.`,
     rejected: `A equipe concluiu sua avaliação e sua candidatura não foi aprovada desta vez. Confira o resultado em <#${resultChannelId}>.`,
   };
-  const components: Array<ActionRowBuilder<ButtonBuilder> | ActionRowBuilder<StringSelectMenuBuilder>> = [];
+  const components: ActionRowBuilder<ButtonBuilder>[] = [];
   if (stage === 'submitting') components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(button('send', 'Concluir envio', ButtonStyle.Primary)));
   if (stage !== 'draft') {
     const color = stage === 'approved' ? green : stage === 'rejected' ? red : gold;
     return { embeds: [{ title: '📜 Minha Allowlist', description: states[stage], color, footer }], components, allowedMentions: silent };
   }
-  const count = questions.filter(question => answered(question.id, app)).length;
-  const next = nextQuestion(app);
-  const list = questions.map(question => `${answered(question.id, app) ? '✅ ' : ''}**${question.id}.** ${question.prompt}`).join('\n\n');
-  const select = new StringSelectMenuBuilder().setCustomId('al:choose').setPlaceholder('Escolha uma pergunta para responder ou editar')
-    .addOptions(questions.map(question => ({ label: question.label, value: question.id, description: answered(question.id, app) ? 'Respondida • Toque para editar' : 'Aguardando resposta' })));
-  components.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select));
-  const actions = new ActionRowBuilder<ButtonBuilder>();
-  if (next) actions.addComponents(button('next', `Responder pergunta ${next.id}`, ButtonStyle.Primary));
-  actions.addComponents(
-    new ButtonBuilder().setLabel('Abrir Hastebin').setStyle(ButtonStyle.Link).setURL(hastebin),
-    button('send', 'Enviar para análise', ButtonStyle.Success).setDisabled(!applicationReady(app)),
-  );
-  components.push(actions);
-  const progress = { name: `${count}/16 respondidas`, value: 'Use o menu abaixo. Cada resposta é salva ao enviar.' };
-  const fields = app?.feedback ? [{ name: 'Ajustes solicitados pela equipe', value: safeText(app.feedback) }, progress] : [progress];
-  return { embeds: [{ title: '📜 Minha Allowlist', description: list, fields, color: gold, footer }], components, allowedMentions: silent };
+  const description = app?.feedback
+    ? `**Ajustes solicitados pela equipe**\n${safeText(app.feedback)}`
+    : 'Abra seu formulário para escrever as respostas e enviar a ficha.';
+  components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(button('form', 'Abrir formulário', ButtonStyle.Primary), hastebinButton()));
+  return { embeds: [{ title: '📜 Minha Allowlist', description, color: gold, footer }], components, allowedMentions: silent };
 }
 
 export function sectionAt(index: string | undefined) {
   if (!index || !/^[0-4]$/.test(index)) throw new UserError('Selecione uma parte válida do formulário.');
   return sections[Number(index)]!;
-}
-
-export function answerForm(id: string, app?: Application) {
-  const question = questionAt(id);
-  const lore = id === '16';
-  const modal = new ModalBuilder().setCustomId(`al:save-answer:${id}`).setTitle(`Allowlist • Pergunta ${id}`)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(question.prompt));
-  if (lore) {
-    const name = new TextInputBuilder().setCustomId('character').setStyle(TextInputStyle.Short).setMaxLength(80).setRequired(true);
-    if (app?.character) name.setValue(app.character);
-    modal.addLabelComponents(new LabelBuilder().setLabel('Nome completo do personagem').setTextInputComponent(name));
-  }
-  const input = new TextInputBuilder().setCustomId(id).setStyle(lore ? TextInputStyle.Short : TextInputStyle.Paragraph)
-    .setMaxLength(lore ? 200 : answerLimit).setRequired(true);
-  if (lore) input.setPlaceholder('https://www.toptal.com/developers/hastebin/...');
-  const value = app?.answers[id];
-  if (value) input.setValue(value);
-  return modal.addLabelComponents(new LabelBuilder().setLabel(lore ? 'Link da história salva no Hastebin' : 'Sua resposta').setTextInputComponent(input));
 }
 
 export function reviewCard(app: Application) {

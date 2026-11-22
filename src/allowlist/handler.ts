@@ -1,12 +1,35 @@
 import { MessageFlags, type ButtonInteraction, type Interaction, type ModalSubmitInteraction, type StringSelectMenuInteraction } from 'discord.js';
 import { form } from '../components/forms.js';
 import { snowflake, text, UserError } from '../validation/input.js';
-import { answerForm, answersCard, applicationCard, nextQuestion, sectionAt, silent } from './cards.js';
+import { answersCard, applicationCard, sectionAt, silent } from './cards.js';
+import { allowlistForm, parseForm, readForm } from './form.js';
 import { answerLimit, loreLink, questionAt } from './questions.js';
 import type { Allowlist } from './service.js';
 import { newApplication } from './store.js';
 
 type Component = ButtonInteraction | ModalSubmitInteraction | StringSelectMenuInteraction;
+
+async function submitForm(i: ModalSubmitInteraction, allowlist: Allowlist) {
+  await i.deferReply({ flags: MessageFlags.Ephemeral });
+  const { store, config } = allowlist;
+  return store.run(i.user.id, async () => {
+    const app = await store.get(i.user.id) ?? newApplication(i.user.id);
+    if (app.stage !== 'draft') throw new UserError('Sua ficha já foi enviada. Consulte o status pelo painel.');
+    const values = readForm(id => i.fields.getTextInputValue(id));
+    try {
+      Object.assign(app, parseForm(values));
+    } catch (error) {
+      if (!(error instanceof UserError)) throw error;
+      app.formDraft = values;
+      await store.save(app);
+      return i.editReply({ content: error.message, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId) });
+    }
+    delete app.formDraft;
+    await store.save(app);
+    await allowlist.submit(app);
+    return i.editReply(applicationCard(app, config.scheduleChannelId, config.resultChannelId));
+  });
+}
 
 async function staffAction(i: Component, allowlist: Allowlist, action: string, userId: string, applicationId: string) {
   const { guild, message } = i;
@@ -57,26 +80,30 @@ export async function allowlistInteraction(i: Interaction, allowlist: Allowlist 
   if (!allowlist || !i.guild || i.guildId !== allowlist.guildId) throw new UserError('A Allowlist não está disponível aqui.');
   const { store, config } = allowlist;
   const dashboard = async () => applicationCard(await store.get(i.user.id), config.scheduleChannelId, config.resultChannelId);
-  if (i.isChatInputCommand()) return i.reply({ ...await dashboard(), flags: MessageFlags.Ephemeral });
+  if (i.isChatInputCommand()) {
+    const app = await store.get(i.user.id);
+    if (!app || (app.stage === 'draft' && !app.feedback)) return i.showModal(allowlistForm(app));
+    return i.reply({ ...applicationCard(app, config.scheduleChannelId, config.resultChannelId), flags: MessageFlags.Ephemeral });
+  }
   if (!i.isButton() && !i.isModalSubmit() && !i.isStringSelectMenu()) return;
   const [, action, key, appId] = i.customId.split(':');
   if (['read', 'form-pass', 'interview-pass', 'reject', 'adjust', 'adjust-save'].includes(action ?? '')) {
     return staffAction(i, allowlist, action!, snowflake(key ?? ''), appId ?? '');
   }
   if (action === 'home' && i.isButton()) {
-    const view = await dashboard();
+    const app = await store.get(i.user.id);
+    if (!app || (app.stage === 'draft' && !app.feedback)) return i.showModal(allowlistForm(app));
+    const view = applicationCard(app, config.scheduleChannelId, config.resultChannelId);
     return i.channelId === config.panelChannelId && !i.message.flags.has(MessageFlags.Ephemeral)
       ? i.reply({ ...view, flags: MessageFlags.Ephemeral })
       : i.update({ content: null, ...view });
   }
-  if ((action === 'section' || action === 'edit') && i.isButton()) return i.update({ content: null, ...await dashboard() });
-  if ((action === 'choose' && i.isStringSelectMenu()) || (action === 'next' && i.isButton())) {
+  if ((i.isButton() && ['form', 'section', 'edit', 'next'].includes(action ?? '')) || (i.isStringSelectMenu() && action === 'choose')) {
     const app = await store.get(i.user.id);
-    if (app && app.stage !== 'draft') throw new UserError('Sua ficha já foi enviada. Consulte o status no painel.');
-    const question = i.isStringSelectMenu() ? questionAt(i.values[0]) : nextQuestion(app);
-    if (!question) return i.update({ content: null, ...await dashboard() });
-    return i.showModal(answerForm(question.id, app));
+    if (app && app.stage !== 'draft') return i.update({ content: null, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId) });
+    return i.showModal(allowlistForm(app));
   }
+  if (action === 'submit-form' && i.isModalSubmit()) return submitForm(i, allowlist);
   if ((action === 'save-answer' || action === 'save') && i.isModalSubmit()) {
     const prompts = action === 'save' ? sectionAt(key).questions : [questionAt(key)];
     if (i.isFromMessage() && i.message.flags.has(MessageFlags.Ephemeral)) await i.deferUpdate();

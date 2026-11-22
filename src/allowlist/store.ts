@@ -10,6 +10,7 @@ export interface Application {
   userId: string;
   character: string;
   answers: Record<string, string>;
+  formDraft?: string[];
   stage: Stage;
   submittedAt?: number;
   resultStartedAt?: number;

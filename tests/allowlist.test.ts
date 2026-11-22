@@ -3,12 +3,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { ChannelType, Collection, OverwriteType, PermissionFlagsBits, PermissionsBitField, type Client, type Guild, type MessageCreateOptions } from 'discord.js';
-import { answerForm, answersCard, applicationCard, reviewCard } from '../src/allowlist/cards.js';
+import { ChannelType, Collection, ComponentType, MessageFlags, OverwriteType, PermissionFlagsBits, PermissionsBitField, type Client, type Guild, type Interaction, type MessageCreateOptions } from 'discord.js';
+import { answersCard, applicationCard, reviewCard } from '../src/allowlist/cards.js';
+import { allowlistForm, parseForm, readForm } from '../src/allowlist/form.js';
+import { allowlistInteraction } from '../src/allowlist/handler.js';
 import { loreLink, questions } from '../src/allowlist/questions.js';
 import { Allowlist, type AllowlistConfig } from '../src/allowlist/service.js';
 import { AllowlistStore, newApplication } from '../src/allowlist/store.js';
-import { validateEmbeds } from '../src/validation/input.js';
 
 const guildId = '123456789012345678';
 const botId = '223456789012345678';
@@ -21,23 +22,35 @@ const config: AllowlistConfig = {
 };
 const fullPermissions = new PermissionsBitField(PermissionFlagsBits.Administrator);
 
-test('Allowlist mostra as 16 perguntas em sequência com o campo abaixo do enunciado', () => {
+function formValues(app: ReturnType<typeof newApplication>) {
+  const modal = allowlistForm(app).toJSON();
+  assert.equal(modal.components.length, 5);
+  return Object.fromEntries(modal.components.map(component => {
+    assert.ok(component.type === ComponentType.Label && component.component.type === ComponentType.TextInput);
+    const { custom_id, value } = component.component;
+    assert.ok(value && value.length <= 4000);
+    return [custom_id, value];
+  }));
+}
+
+test('Allowlist aceita uma única ficha com as 16 perguntas e reaproveita rascunhos anteriores', () => {
   assert.deepEqual(questions.map(q => Number(q.id)), Array.from({ length: 16 }, (_, i) => i + 1));
   const app = newApplication(applicant);
-  for (const question of questions) app.answers[question.id] = 'a';
-  app.feedback = 'a'.repeat(800);
-  const dashboard = applicationCard(app, config.scheduleChannelId, config.resultChannelId);
-  validateEmbeds(dashboard.embeds);
-  const menu = dashboard.components[0]!.toJSON().components[0];
-  assert.ok(menu && 'options' in menu);
-  assert.deepEqual(menu.options.map(option => option.value), questions.map(q => q.id));
-  for (const question of questions) {
-    assert.ok(dashboard.embeds[0]?.description.includes(question.prompt));
-    const modal = answerForm(question.id).toJSON();
-    assert.equal(modal.components.length, question.id === '16' ? 3 : 2);
-    assert.deepEqual(modal.components[0], { type: 10, content: question.prompt });
-  }
+  app.character = 'Ada Bell';
+  for (const question of questions) app.answers[question.id] = `Minha resposta ${question.id}.\n${'a'.repeat(780)}`;
   const base = 'https://www.toptal.com/developers/hastebin';
+  app.answers['16'] = base + '/historiaabc';
+  const filled = formValues(app);
+  const raw = Object.values(filled).join('\n');
+  for (const question of questions) assert.ok(raw.includes(`${question.id}. ${question.prompt}`));
+  const values = readForm(id => filled[id]!.replaceAll('\n', '\r\n'));
+  assert.deepEqual(parseForm(values), { character: app.character, answers: app.answers });
+  const empty = formValues(newApplication(applicant));
+  assert.throws(() => parseForm(Object.values(empty)), /Pergunta 1/);
+  const wrongLore = values.map(value => value.replace(base + '/historiaabc', base));
+  assert.throws(() => parseForm(wrongLore), /link do texto salvo/);
+  app.formDraft = wrongLore;
+  assert.deepEqual(Object.values(formValues(app)), wrongLore);
   assert.equal(loreLink(base + '/historiaabc'), base + '/historiaabc');
   assert.equal(loreLink(base + '/raw/historiaabc'), base + '/historiaabc');
   for (const bad of [base, base + '/', 'Uma história', 'https://toptal.com.example.org/developers/hastebin/historiaabc']) {
@@ -95,7 +108,19 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   const reopened = new AllowlistStore(dir);
   assert.deepEqual(await reopened.get(applicant), app);
 
-  await service.submit(app);
+  const values = formValues(app);
+  const replies: unknown[] = [];
+  const interaction = {
+    user: { id: applicant }, guild: discordGuild, guildId, customId: 'al:submit-form',
+    isChatInputCommand: () => false, isButton: () => false, isStringSelectMenu: () => false, isModalSubmit: () => true,
+    fields: { getTextInputValue: (id: string) => values[id] },
+    deferReply: async (reply: unknown) => { replies.push(reply); },
+    editReply: async (reply: unknown) => { replies.push(reply); },
+  } as unknown as Interaction;
+  await allowlistInteraction(interaction, service);
+  assert.deepEqual(replies[0], { flags: MessageFlags.Ephemeral });
+  assert.match(JSON.stringify(replies[1]), /com a equipe para análise/);
+  Object.assign(app, await service.store.get(applicant));
   assert.equal(app.stage, 'review');
   assert.equal(applicantRoles.size, 0);
   assert.equal(sent[0]?.channelId, config.reviewChannelId);
