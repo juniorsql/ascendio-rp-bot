@@ -37,13 +37,17 @@ test('Allowlist exibe cada pergunta completa imediatamente antes do respectivo c
       assert.ok(label?.type === ComponentType.Label && label.component.type === ComponentType.TextInput);
       assert.equal(label.component.custom_id, question.id);
       assert.equal(label.component.value, undefined);
-      assert.equal(label.component.required, true);
+      assert.equal(label.component.required, false);
       if (question.id === '16') {
         assert.equal(label.label, 'Link da história');
         assert.equal(label.component.max_length, 2048);
         assert.equal(label.component.style, 1);
+        const name = components[prompt + 2];
+        assert.ok(name?.type === ComponentType.Label && name.component.type === ComponentType.TextInput);
+        assert.equal(name.component.custom_id, 'character');
+        assert.equal(name.component.required, false);
       } else {
-        assert.equal(label.label, question.id === '4' ? '\u200B' : `Resposta ${question.id}`);
+        assert.equal(label.label, '\u200B');
         assert.equal(label.component.style, 2);
       }
     }
@@ -192,13 +196,13 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   await service.store.save(app);
   const reopened = new AllowlistStore(dir);
   assert.deepEqual(await reopened.get(applicant), app);
-  async function submitPage(page: number, lore = link, action = 'answers-v3') {
+  async function submitPage(page: number, lore = link, action = 'answers-v3', answers: Record<string, string> = {}) {
     const replies: unknown[] = [];
     const interaction = {
       user: { id: applicant }, guild: discordGuild, guildId, customId: `al:${action}:${page}`,
       isChatInputCommand: () => false, isButton: () => false, isStringSelectMenu: () => false, isModalSubmit: () => true,
       isFromMessage: () => page > 0, message: { flags: { has: () => true } },
-      fields: { getTextInputValue: (id: string) => id === 'character' ? 'Ada Bell' : id === '16' ? lore : 'Minha resposta de teste.' },
+      fields: { getTextInputValue: (id: string) => answers[id] ?? (id === 'character' ? 'Ada Bell' : id === '16' ? lore : 'Minha resposta de teste.') },
       deferReply: async (reply: unknown) => { replies.push(reply); },
       deferUpdate: async () => { replies.push('private update'); },
       editReply: async (reply: unknown) => { replies.push(reply); },
@@ -207,6 +211,8 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
     assert.deepEqual(replies[0], page === 0 ? { flags: MessageFlags.Ephemeral } : 'private update');
     return JSON.stringify(replies[1]);
   }
+  assert.match(await submitPage(0, link, 'answers-v3', { '2': '' }), /2\. Derrota em um duelo/);
+  assert.deepEqual(Object.keys((await reopened.get(applicant))!.answers), ['1']);
   const resumed = await submitPage(0, link, 'answers-v2');
   assert.deepEqual(Object.keys((await reopened.get(applicant))!.answers), ['1', '2', '3']);
   assert.match(resumed, /al:page-v3:1/);
@@ -216,6 +222,7 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
     assert.doesNotMatch(progress, /Enviar para análise/);
     assert.equal(sent.length, 0);
   }
+  assert.match(await submitPage(pageCount - 1, link, 'answers-v3', { character: '' }), /Nome do personagem/);
   assert.match(await submitPage(pageCount - 1, 'minha história'), /endereço da história/);
   assert.equal((await reopened.get(applicant))?.answers['15'], 'Minha resposta de teste.');
   assert.equal(sent.length, 0);

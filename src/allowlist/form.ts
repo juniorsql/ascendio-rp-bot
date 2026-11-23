@@ -26,7 +26,8 @@ export function resumePage(app?: Application) {
 }
 
 function inputLabel(id: string, label: string, value: string | undefined, max: number, style: TextInputStyle, placeholder: string) {
-  const input = new TextInputBuilder().setCustomId(id).setStyle(style).setMaxLength(max).setRequired(true).setPlaceholder(placeholder);
+  // O bot valida as respostas ao salvar, sem os asteriscos do modal.
+  const input = new TextInputBuilder().setCustomId(id).setStyle(style).setMaxLength(max).setRequired(false).setPlaceholder(placeholder);
   if (value) input.setValue(value);
   return new LabelBuilder().setLabel(label).setTextInputComponent(input);
 }
@@ -43,10 +44,9 @@ export function allowlistForm(page: number, app?: Application) {
       );
       continue;
     }
-    // O Discord exige um rótulo. Na pergunta 4, o enunciado já identifica o campo.
-    const label = question.id === '4' ? '\u200B' : `Resposta ${question.id}`;
+    // O Discord exige um rótulo. O enunciado acima já identifica o campo.
     modal.addLabelComponents(
-      inputLabel(question.id, label, app?.answers[question.id], answerLimit, TextInputStyle.Paragraph, 'Escreva sua resposta aqui'),
+      inputLabel(question.id, '\u200B', app?.answers[question.id], answerLimit, TextInputStyle.Paragraph, 'Escreva sua resposta aqui'),
     );
   }
   if (page < pageCount - 1) {
