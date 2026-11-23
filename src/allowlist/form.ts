@@ -43,8 +43,10 @@ export function allowlistForm(page: number, app?: Application) {
       );
       continue;
     }
+    // O Discord exige um rótulo. Na pergunta 4, o enunciado já identifica o campo.
+    const label = question.id === '4' ? '\u200B' : `Resposta ${question.id}`;
     modal.addLabelComponents(
-      inputLabel(question.id, `Resposta ${question.id}`, app?.answers[question.id], answerLimit, TextInputStyle.Paragraph, 'Escreva sua resposta aqui'),
+      inputLabel(question.id, label, app?.answers[question.id], answerLimit, TextInputStyle.Paragraph, 'Escreva sua resposta aqui'),
     );
   }
   if (page < pageCount - 1) {

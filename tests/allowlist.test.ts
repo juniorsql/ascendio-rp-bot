@@ -37,12 +37,13 @@ test('Allowlist exibe cada pergunta completa imediatamente antes do respectivo c
       assert.ok(label?.type === ComponentType.Label && label.component.type === ComponentType.TextInput);
       assert.equal(label.component.custom_id, question.id);
       assert.equal(label.component.value, undefined);
+      assert.equal(label.component.required, true);
       if (question.id === '16') {
         assert.equal(label.label, 'Link da história');
         assert.equal(label.component.max_length, 2048);
         assert.equal(label.component.style, 1);
       } else {
-        assert.equal(label.label, `Resposta ${question.id}`);
+        assert.equal(label.label, question.id === '4' ? '\u200B' : `Resposta ${question.id}`);
         assert.equal(label.component.style, 2);
       }
     }
