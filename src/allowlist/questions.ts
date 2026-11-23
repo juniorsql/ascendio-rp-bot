@@ -16,7 +16,7 @@ export interface Section {
 
 export const sections: readonly Section[] = [
   {
-    title: 'I · Interpretação e conhecimentos de RP',
+    title: 'PARTE I — INTERPRETAÇÃO E CONHECIMENTOS DE RP',
     questions: [
       { id: '1', label: '1. Conhecimento do jogador e do personagem', prompt: 'Você conhece profundamente o universo de Harry Potter, mas seu personagem está apenas começando seus estudos em Hogwarts. Como diferenciaria o seu conhecimento como jogador daquilo que seu personagem realmente sabe?' },
       { id: '2', label: '2. Derrota em um duelo', prompt: 'Durante um duelo, seu personagem acaba sendo derrotado por outro bruxo. Como você interpretaria essa derrota e suas consequências, mesmo que desejasse que seu personagem tivesse vencido?' },
@@ -26,7 +26,7 @@ export const sections: readonly Section[] = [
     ],
   },
   {
-    title: 'II · Regras do Ascendio RP',
+    title: 'PARTE II — REGRAS DO ASCENDIO RP',
     questions: [
       { id: '6', label: '6. Exploração da Floresta Proibida', prompt: 'Um estudante deseja explorar a Floresta Proibida durante a noite, sem autorização ou acompanhamento. Essa atitude é permitida pelas regras de Hogwarts? Explique.' },
       { id: '7', label: '7. Informação descoberta fora do RP', prompt: 'Você descobre, por meio de uma conversa fora do RP, um segredo importante sobre outro personagem. Como deve agir em relação a essa informação dentro do jogo?' },
@@ -34,7 +34,7 @@ export const sections: readonly Section[] = [
     ],
   },
   {
-    title: 'III · Ambientação e mundo bruxo (1940)',
+    title: 'PARTE III — AMBIENTAÇÃO E MUNDO BRUXO (1940)',
     questions: [
       { id: '9', label: '9. Como interpretar na década de 1940', prompt: 'O Ascendio RP se passa em 1940. Como você pretende adaptar os costumes, conhecimentos e comportamentos do seu personagem à época?' },
       { id: '10', label: '10. Notícias do Profeta Diário', prompt: 'O Profeta Diário tem divulgado notícias sobre ataques misteriosos e o aumento da insegurança no mundo bruxo. Como esses acontecimentos poderiam influenciar a rotina e as decisões do seu personagem?' },
@@ -43,7 +43,7 @@ export const sections: readonly Section[] = [
     ],
   },
   {
-    title: 'IV · Expectativas e experiências',
+    title: 'PARTE IV — EXPECTATIVAS E EXPERIÊNCIAS DO JOGADOR',
     questions: [
       { id: '13', label: '13. O que espera viver no Ascendio RP', prompt: 'O que mais desperta seu interesse no Ascendio RP? Quais histórias, atividades ou experiências você espera vivenciar durante sua jornada no mundo bruxo?' },
       { id: '14', label: '14. Experiências anteriores com RP', prompt: 'Considerando suas experiências anteriores em jogos e comunidades de RP, quais situações já fizeram você perder o interesse, sentir-se desmotivado ou deixar de aproveitar uma história como gostaria?' },
@@ -51,32 +51,14 @@ export const sections: readonly Section[] = [
     ],
   },
   {
-    title: 'V · História do personagem',
+    title: 'PARTE V — HISTÓRIA DO PERSONAGEM',
     questions: [
-      { id: '16', label: '16. Link da história no Hastebin', prompt: 'Conte a história do personagem que pretende interpretar. Apresente nome, idade, origem, família, personalidade, qualidades, defeitos, acontecimentos marcantes, objetivos e motivações. Explique como ele se encaixa em 1940 e o que o levou à região de Hogwarts. Habilidades especiais e vínculos extraordinários dependem de aprovação da equipe.\n\nEscreva a história no Hastebin, salve e cole o link do texto salvo no formulário.' },
+      { id: '16', label: '16. Link da história no Hastebin', prompt: 'Conte a lore (história) do personagem que pretende interpretar no Ascendio RP.\n\nApresente seu nome, idade, origem, família, personalidade, qualidades, defeitos, acontecimentos marcantes, objetivos e motivações. Explique como ele se encaixa no mundo bruxo de 1940 e o que o levou a iniciar sua jornada na região de Hogwarts.' },
     ],
   },
 ];
 
 export const questions = sections.flatMap(section => section.questions);
-
-export const shortQuestions = [
-  ['O que seu personagem pode saber?', 'Ele acaba de chegar a Hogwarts. Como você separa o que sabe como jogador do que ele aprendeu?'],
-  ['Como ele lida com a derrota?', 'Ele perdeu um duelo que você queria vencer. Como você mostraria as consequências no RP?'],
-  ['Como ele discordaria de um professor?', 'Ele acha que sabe mais. O que diria ou faria, considerando a experiência do professor?'],
-  ['Como agiria ao ver uma discussão?', 'Dois bruxos discutem e ele não sabe por quê. Ele interfere, observa ou pede ajuda? Por quê?'],
-  ['Como ele ganharia prestígio?', 'Que escolhas ajudariam seu personagem a ganhar reconhecimento sem forçar os outros a admirá-lo?'],
-  ['Pode entrar na Floresta Proibida?', 'Um estudante quer entrar à noite, sozinho e sem autorização. Explique o que dizem as regras.'],
-  ['Como lidar com informação fora do RP?', 'Você descobriu um segredo sobre outro personagem fora do jogo. Como lidaria com isso no RP?'],
-  ['Como ele obteria uma habilidade rara?', 'Explique como pedir aprovação para Animagia, Legilimência ou um vínculo com criatura rara.'],
-  ['Como você interpretaria alguém de 1940?', 'Dê exemplos de costumes, conhecimentos ou comportamentos do personagem adequados à época.'],
-  ['Como os ataques afetariam sua rotina?', 'O Profeta Diário noticia ataques misteriosos. O que mudaria nas decisões do seu personagem?'],
-  ['O que ele pensa sobre Grindelwald?', 'Explique a posição do personagem sobre os ideais de Grindelwald e como isso afeta suas relações.'],
-  ['Como ele reagiria aos rumores?', 'Ele ouviu rumores sobre a Floresta Proibida. Iria investigar, pedir ajuda ou ficar longe? Por quê?'],
-  ['O que você quer viver no Ascendio RP?', 'Conte que histórias, atividades ou experiências você gostaria de jogar aqui.'],
-  ['O que já tirou sua vontade de jogar RP?', 'Se já jogou RP, conte uma situação que desanimou você e explique o que atrapalhou.'],
-  ['Como você ajudaria a comunidade?', 'Dê um exemplo de como tornaria o RP respeitoso e divertido para quem joga com você.'],
-] as const;
 
 export function questionAt(id: string | undefined): Question {
   const question = questions.find(item => item.id === id);

@@ -1,13 +1,15 @@
 import { LabelBuilder, ModalBuilder, TextDisplayBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { text, UserError } from '../validation/input.js';
-import { answerLimit, loreLink, loreLinkLimit, questions, shortQuestions, type Question } from './questions.js';
+import { answerLimit, loreLink, loreLinkLimit, questions, type Question } from './questions.js';
 import type { Application } from './store.js';
 
 const legacyBlocks = [
   questions.slice(0, 3), questions.slice(3, 6), questions.slice(6, 9), questions.slice(9, 12), questions.slice(12),
 ];
+// Rascunhos antigos incluíam o enunciado original junto com a resposta.
+const legacyLorePrompt = 'Conte a história do personagem que pretende interpretar. Apresente nome, idade, origem, família, personalidade, qualidades, defeitos, acontecimentos marcantes, objetivos e motivações. Explique como ele se encaixa em 1940 e o que o levou à região de Hogwarts. Habilidades especiais e vínculos extraordinários dependem de aprovação da equipe.\n\nEscreva a história no Hastebin, salve e cole o link do texto salvo no formulário.';
 const fieldId = (index: number) => `questions-${index + 1}`;
-const heading = (question: Question) => `${question.id}. ${question.prompt}\n`;
+const legacyHeading = (question: Question) => `${question.id}. ${question.id === '16' ? legacyLorePrompt : question.prompt}\n`;
 
 const questionsPerPage = 3;
 export const pageCount = Math.ceil(questions.length / questionsPerPage);
@@ -31,11 +33,13 @@ function inputLabel(id: string, label: string, value: string | undefined, max: n
 
 export function allowlistForm(page: number, app?: Application) {
   const modal = new ModalBuilder().setCustomId(`al:answers-v2:${page}`).setTitle(`Allowlist • ${page + 1} de ${pageCount}`);
-  for (const question of pageQuestions(page)) {
+  const pageItems = pageQuestions(page);
+  // Os enunciados compartilham um bloco para caber com os três campos no modal.
+  modal.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+    pageItems.map(question => `**${question.id}.** ${question.prompt}`).join('\n\n'),
+  ));
+  for (const question of pageItems) {
     if (question.id === '16') {
-      modal.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        '**16. Qual é a história do seu personagem?**\nInclua idade, família, origem, qualidades, defeitos e objetivos. Conte um acontecimento marcante e explique o que o trouxe à região de Hogwarts em 1940. Habilidades raras e vínculos especiais precisam de aprovação da staff.',
-      ));
       modal.addLabelComponents(
         inputLabel('character', 'Nome do personagem', app?.character, 80, TextInputStyle.Short, 'Nome completo do personagem'),
         inputLabel(question.id, 'Link da história', app?.answers[question.id], loreLinkLimit, TextInputStyle.Short, 'Cole o endereço que abre a sua história')
@@ -43,9 +47,9 @@ export function allowlistForm(page: number, app?: Application) {
       );
       continue;
     }
-    const [label, context] = shortQuestions[Number(question.id) - 1]!;
-    modal.addLabelComponents(inputLabel(question.id, `${question.id}. ${label}`, app?.answers[question.id], answerLimit, TextInputStyle.Paragraph, 'Escreva sua resposta aqui')
-      .setDescription(context));
+    modal.addLabelComponents(
+      inputLabel(question.id, question.label, app?.answers[question.id], answerLimit, TextInputStyle.Paragraph, 'Escreva sua resposta aqui'),
+    );
   }
   if (page < pageCount - 1) {
     modal.addTextDisplayComponents(new TextDisplayBuilder().setContent('-# O botão Enviar salva seu rascunho. Depois, toque em Continuar.'));
@@ -63,7 +67,7 @@ function legacyEntries(values: readonly string[], tolerateMissing: boolean) {
     const value = values[index]?.trimStart() ?? '';
     const bordered = `\n${value}`;
     for (const [offset, question] of block.entries()) {
-      const title = heading(question);
+      const title = legacyHeading(question);
       const start = bordered.indexOf(`\n${title}`);
       if (start < 0) {
         if (tolerateMissing) continue;
@@ -71,7 +75,7 @@ function legacyEntries(values: readonly string[], tolerateMissing: boolean) {
       }
       const next = block[offset + 1];
       const contentStart = start + title.length;
-      const end = next ? value.indexOf(`\n${heading(next)}`, contentStart) : value.length;
+      const end = next ? value.indexOf(`\n${legacyHeading(next)}`, contentStart) : value.length;
       if (end < 0) {
         if (tolerateMissing) continue;
         throw new UserError(`O enunciado da pergunta ${next!.id} foi alterado. Confira o formulário.`);

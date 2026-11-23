@@ -22,13 +22,16 @@ const config: AllowlistConfig = {
 };
 const fullPermissions = new PermissionsBitField(PermissionFlagsBits.Administrator);
 
-test('Allowlist exibe cada pergunta fixa acima de uma resposta inicialmente vazia', () => {
+test('Allowlist exibe as perguntas completas acima dos campos inicialmente vazios', () => {
   const questionIds = [];
   assert.deepEqual(Array.from({ length: pageCount }, (_, page) => pageQuestions(page).length), [3, 3, 3, 3, 3, 1]);
   for (let page = 0; page < pageCount; page++) {
     const { components } = allowlistForm(page).toJSON();
     assert.ok(components.length <= 5);
+    const instructions = components[0];
+    assert.ok(instructions?.type === ComponentType.TextDisplay);
     for (const question of pageQuestions(page)) {
+      assert.ok(instructions.content.includes(`**${question.id}.** ${question.prompt}`));
       questionIds.push(Number(question.id));
       const label = components.find(component => component.type === ComponentType.Label && component.component.type === ComponentType.TextInput
         && component.component.custom_id === question.id);
@@ -40,8 +43,8 @@ test('Allowlist exibe cada pergunta fixa acima de uma resposta inicialmente vazi
         assert.equal(label.component.max_length, 2048);
         assert.equal(label.component.style, 1);
       } else {
-        assert.match(label.label, new RegExp(`^${question.id}\\. .+\\?$`));
-        assert.ok(label.description);
+        assert.equal(label.label, question.label);
+        assert.equal(label.component.style, 2);
       }
     }
   }
@@ -118,9 +121,21 @@ test('Allowlist reaproveita respostas de rascunhos antigos e retoma da primeira 
   restoreLegacyDraft(app);
   assert.deepEqual(app.answers, { '1': 'Resposta da pessoa 1', '2': 'Resposta da pessoa 2' });
   assert.equal(resumePage(app), 0);
-  const first = allowlistForm(0, app).toJSON().components[0];
+  const first = allowlistForm(0, app).toJSON().components[1];
   assert.ok(first?.type === ComponentType.Label && first.component.type === ComponentType.TextInput);
   assert.equal(first.component.value, 'Resposta da pessoa 1');
+});
+
+test('Allowlist recupera o nome e o link de um rascunho com o enunciado antigo da pergunta 16', () => {
+  const app = newApplication(applicant);
+  const link = 'https://hastebin.com/share/historiaabc';
+  app.formDraft = ['', '', '', '',
+    '16. Conte a história do personagem que pretende interpretar. Apresente nome, idade, origem, família, personalidade, qualidades, defeitos, acontecimentos marcantes, objetivos e motivações. Explique como ele se encaixa em 1940 e o que o levou à região de Hogwarts. Habilidades especiais e vínculos extraordinários dependem de aprovação da equipe.\n\nEscreva a história no Hastebin, salve e cole o link do texto salvo no formulário.\n' +
+    `Nome do personagem: Ada Bell\nLink da história: ${link}`,
+  ];
+  restoreLegacyDraft(app);
+  assert.equal(app.character, 'Ada Bell');
+  assert.equal(app.answers['16'], link);
 });
 
 for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restringe a revisão e publica uma vez o resultado ${decision}`, async t => {
