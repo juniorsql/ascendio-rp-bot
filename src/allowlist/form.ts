@@ -11,7 +11,7 @@ const legacyLorePrompt = 'Conte a história do personagem que pretende interpret
 const fieldId = (index: number) => `questions-${index + 1}`;
 const legacyHeading = (question: Question) => `${question.id}. ${question.id === '16' ? legacyLorePrompt : question.prompt}\n`;
 
-const questionsPerPage = 3;
+const questionsPerPage = 2;
 export const pageCount = Math.ceil(questions.length / questionsPerPage);
 
 export function pageQuestions(page: number, pageSize = questionsPerPage) {
@@ -32,23 +32,19 @@ function inputLabel(id: string, label: string, value: string | undefined, max: n
 }
 
 export function allowlistForm(page: number, app?: Application) {
-  const modal = new ModalBuilder().setCustomId(`al:answers-v2:${page}`).setTitle(`Allowlist • ${page + 1} de ${pageCount}`);
-  const pageItems = pageQuestions(page);
-  // Os enunciados compartilham um bloco para caber com os três campos no modal.
-  modal.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-    pageItems.map(question => `**${question.id}.** ${question.prompt}`).join('\n\n'),
-  ));
-  for (const question of pageItems) {
+  const modal = new ModalBuilder().setCustomId(`al:answers-v3:${page}`).setTitle(`Allowlist • ${page + 1} de ${pageCount}`);
+  for (const question of pageQuestions(page)) {
+    modal.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${question.id}.** ${question.prompt}`));
     if (question.id === '16') {
       modal.addLabelComponents(
-        inputLabel('character', 'Nome do personagem', app?.character, 80, TextInputStyle.Short, 'Nome completo do personagem'),
         inputLabel(question.id, 'Link da história', app?.answers[question.id], loreLinkLimit, TextInputStyle.Short, 'Cole o endereço que abre a sua história')
           .setDescription('Copie o link de compartilhamento do texto e cole aqui.'),
+        inputLabel('character', 'Nome do personagem', app?.character, 80, TextInputStyle.Short, 'Nome completo do personagem'),
       );
       continue;
     }
     modal.addLabelComponents(
-      inputLabel(question.id, question.label, app?.answers[question.id], answerLimit, TextInputStyle.Paragraph, 'Escreva sua resposta aqui'),
+      inputLabel(question.id, `Resposta ${question.id}`, app?.answers[question.id], answerLimit, TextInputStyle.Paragraph, 'Escreva sua resposta aqui'),
     );
   }
   if (page < pageCount - 1) {

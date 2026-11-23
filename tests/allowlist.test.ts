@@ -22,19 +22,18 @@ const config: AllowlistConfig = {
 };
 const fullPermissions = new PermissionsBitField(PermissionFlagsBits.Administrator);
 
-test('Allowlist exibe as perguntas completas acima dos campos inicialmente vazios', () => {
+test('Allowlist exibe cada pergunta completa imediatamente antes do respectivo campo vazio', () => {
   const questionIds = [];
-  assert.deepEqual(Array.from({ length: pageCount }, (_, page) => pageQuestions(page).length), [3, 3, 3, 3, 3, 1]);
+  assert.deepEqual(Array.from({ length: pageCount }, (_, page) => pageQuestions(page).length), [2, 2, 2, 2, 2, 2, 2, 2]);
   for (let page = 0; page < pageCount; page++) {
     const { components } = allowlistForm(page).toJSON();
     assert.ok(components.length <= 5);
-    const instructions = components[0];
-    assert.ok(instructions?.type === ComponentType.TextDisplay);
     for (const question of pageQuestions(page)) {
-      assert.ok(instructions.content.includes(`**${question.id}.** ${question.prompt}`));
+      const prompt = components.findIndex(component => component.type === ComponentType.TextDisplay
+        && component.content === `**${question.id}.** ${question.prompt}`);
+      assert.ok(prompt >= 0);
       questionIds.push(Number(question.id));
-      const label = components.find(component => component.type === ComponentType.Label && component.component.type === ComponentType.TextInput
-        && component.component.custom_id === question.id);
+      const label = components[prompt + 1];
       assert.ok(label?.type === ComponentType.Label && label.component.type === ComponentType.TextInput);
       assert.equal(label.component.custom_id, question.id);
       assert.equal(label.component.value, undefined);
@@ -43,7 +42,7 @@ test('Allowlist exibe as perguntas completas acima dos campos inicialmente vazio
         assert.equal(label.component.max_length, 2048);
         assert.equal(label.component.style, 1);
       } else {
-        assert.equal(label.label, question.label);
+        assert.equal(label.label, `Resposta ${question.id}`);
         assert.equal(label.component.style, 2);
       }
     }
@@ -120,7 +119,7 @@ test('Allowlist reaproveita respostas de rascunhos antigos e retoma da primeira 
   app.formDraft = [questions.slice(0, 3).map(q => `${q.id}. ${q.prompt}\nResposta: ${q.id === '3' ? '' : `Resposta da pessoa ${q.id}`}`).join('\n\n')];
   restoreLegacyDraft(app);
   assert.deepEqual(app.answers, { '1': 'Resposta da pessoa 1', '2': 'Resposta da pessoa 2' });
-  assert.equal(resumePage(app), 0);
+  assert.equal(resumePage(app), 1);
   const first = allowlistForm(0, app).toJSON().components[1];
   assert.ok(first?.type === ComponentType.Label && first.component.type === ComponentType.TextInput);
   assert.equal(first.component.value, 'Resposta da pessoa 1');
@@ -192,10 +191,10 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   await service.store.save(app);
   const reopened = new AllowlistStore(dir);
   assert.deepEqual(await reopened.get(applicant), app);
-  async function submitPage(page: number, lore = link) {
+  async function submitPage(page: number, lore = link, action = 'answers-v3') {
     const replies: unknown[] = [];
     const interaction = {
-      user: { id: applicant }, guild: discordGuild, guildId, customId: `al:answers-v2:${page}`,
+      user: { id: applicant }, guild: discordGuild, guildId, customId: `al:${action}:${page}`,
       isChatInputCommand: () => false, isButton: () => false, isStringSelectMenu: () => false, isModalSubmit: () => true,
       isFromMessage: () => page > 0, message: { flags: { has: () => true } },
       fields: { getTextInputValue: (id: string) => id === 'character' ? 'Ada Bell' : id === '16' ? lore : 'Minha resposta de teste.' },
@@ -207,6 +206,9 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
     assert.deepEqual(replies[0], page === 0 ? { flags: MessageFlags.Ephemeral } : 'private update');
     return JSON.stringify(replies[1]);
   }
+  const resumed = await submitPage(0, link, 'answers-v2');
+  assert.deepEqual(Object.keys((await reopened.get(applicant))!.answers), ['1', '2', '3']);
+  assert.match(resumed, /al:page-v3:1/);
   for (let page = 0; page < pageCount - 1; page++) {
     const progress = await submitPage(page);
     assert.match(progress, /Continuar/);

@@ -60,8 +60,8 @@ export function applicationCard(app: Application | undefined, scheduleChannelId:
   const page = nextPage ?? (app?.feedback ? 0 : resumePage(app));
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(ready
     ? button('send', 'Enviar para análise', ButtonStyle.Success)
-    : button(`page-v2:${page}`, count ? 'Continuar' : 'Começar', ButtonStyle.Primary));
-  if (ready || page > 0) row.addComponents(button('page-v2:0', 'Revisar do início'));
+    : button(`page-v3:${page}`, count ? 'Continuar' : 'Começar', ButtonStyle.Primary));
+  if (ready || page > 0) row.addComponents(button('page-v3:0', 'Revisar do início'));
   components.push(row);
   return { embeds: [{ title: '📜 Minha Allowlist', description, color: gold, footer }], components, allowedMentions: silent };
 }

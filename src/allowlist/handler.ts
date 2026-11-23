@@ -138,17 +138,20 @@ export async function allowlistInteraction(i: Interaction, allowlist: Allowlist 
       ? i.reply({ ...view, flags: MessageFlags.Ephemeral })
       : i.update({ content: null, ...view });
   }
-  if ((i.isButton() && ['page-v2', 'page', 'form', 'section', 'edit', 'next'].includes(action ?? '')) || (i.isStringSelectMenu() && action === 'choose')) {
+  if ((i.isButton() && ['page-v3', 'page-v2', 'page', 'form', 'section', 'edit', 'next'].includes(action ?? '')) || (i.isStringSelectMenu() && action === 'choose')) {
     const app = await load();
     if (app && app.stage !== 'draft') return i.update({ content: null, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId) });
-    const page = action === 'page-v2' ? Number(key) : action === 'page' && key === '0' ? 0 : resumePage(app);
+    let page = resumePage(app);
+    if (action === 'page-v3') page = Number(key);
+    else if ((action === 'page' || action === 'page-v2') && key === '0') page = 0;
     return i.showModal(allowlistForm(page, app));
   }
   if (action === 'submit-form' && i.isModalSubmit()) return submitLegacyForm(i, allowlist);
-  if (action === 'answers-v2' && i.isModalSubmit()) {
+  if (action === 'answers-v3' && i.isModalSubmit()) {
     const page = Number(key);
     return saveAnswers(i, allowlist, pageQuestions(page), page);
   }
+  if (action === 'answers-v2' && i.isModalSubmit()) return saveAnswers(i, allowlist, pageQuestions(Number(key), 3));
   if (action === 'answers' && i.isModalSubmit()) return saveAnswers(i, allowlist, pageQuestions(Number(key), 2));
   if ((action === 'save-answer' || action === 'save') && i.isModalSubmit()) {
     const prompts = action === 'save' ? sectionAt(key).questions : [questionAt(key)];
