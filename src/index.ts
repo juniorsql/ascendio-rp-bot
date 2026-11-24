@@ -11,6 +11,7 @@ import { errorCode, log } from './logs/logger.js';
 import { TicketStore, ticketSeed } from './tickets/store.js';
 import { Tickets } from './tickets/service.js';
 import { Allowlist, allowlistConfig } from './allowlist/service.js';
+import { Referrals, referralConfig } from './services/referrals.js';
 async function main(): Promise<void> {
   const [major, minor] = process.versions.node.split('.').map(Number);
   if (major !== 24 || (minor ?? 0) < 17) throw new Error('NodeRuntimeMismatch: execute npm ci e npm start para usar o Node 24 incluído no projeto.');
@@ -46,7 +47,10 @@ async function main(): Promise<void> {
   const alConfig = allowlistConfig(process.env.ALLOWLIST_CONFIG);
   const allowlist = alConfig ? new Allowlist(client, env.guildId, alConfig, env.dataDir) : undefined;
   await allowlist?.store.init();
-  const ctx = { client, env, store, drafts: new Drafts(), tickets, allowlist };
+  const refConfig = referralConfig(process.env.REFERRALS_CONFIG);
+  const referrals = refConfig ? new Referrals(client, env.guildId, refConfig, env.dataDir) : undefined;
+  await referrals?.init();
+  const ctx = { client, env, store, drafts: new Drafts(), tickets, allowlist, referrals };
   let registered = false;
   client.once(Events.ClientReady, async ready => {
     if (ready.user.id !== env.clientId) { log('application_id_mismatch', {}, 'error'); await shutdown(1); return; }
@@ -58,6 +62,10 @@ async function main(): Promise<void> {
     }
     if (env.register && !registered) {
       try { await register(env); registered = true; } catch (error) { log('registration_failed', { code: errorCode(error) }, 'error'); }
+    }
+    if (referrals) {
+      try { log('referrals_ready', { messageId: await referrals.ensurePanel() }); }
+      catch (error) { log('referrals_setup_failed', { code: errorCode(error) }, 'error'); }
     }
     if (allowlist) {
       const resetRequest = process.env.ALLOWLIST_RESET_OWNER_TEST;
@@ -102,7 +110,7 @@ async function main(): Promise<void> {
     if (stopping) return;
     stopping = true; clearInterval(timer);
     const deadline = setTimeout(() => process.exit(1), 20_000); deadline.unref();
-    await client.destroy(); await store.idle(); await ticketStore.idle(); await allowlist?.store.idle();
+    await client.destroy(); await store.idle(); await ticketStore.idle(); await allowlist?.store.idle(); await referrals?.idle();
     clearTimeout(deadline); process.exitCode = code;
     log('bot_stopped');
   }
