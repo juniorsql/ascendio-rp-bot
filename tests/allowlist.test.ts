@@ -162,11 +162,14 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   const everyone = { id: guildId, type: OverwriteType.Role, allow: new PermissionsBitField(), deny: new PermissionsBitField(PermissionFlagsBits.ViewChannel) };
   const sent: Array<{ channelId: string; options: MessageCreateOptions }> = [];
   let loseResultResponse = decision === 'rejected';
+  let blockRejectionDm = false;
   const history = new Map<string, Collection<string, unknown>>();
   const client = { user: { id: botId },
     users: { send: async (userId: string, options: MessageCreateOptions) => {
       privateNotices.push({ userId, options });
-      if (decision === 'rejected') throw Object.assign(new Error('DM bloqueada'), { code: 50007 });
+      if (blockRejectionDm || (decision === 'rejected' && String(options.nonce).startsWith('al-d-'))) {
+        throw Object.assign(new Error('DM bloqueada'), { code: 50007 });
+      }
     } },
     channels: { fetch: async (channelId: string) => ({
     id: channelId, type: ChannelType.GuildText, guildId, guild, permissionsFor: () => fullPermissions,
@@ -196,10 +199,10 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   await service.store.save(app);
   const reopened = new AllowlistStore(dir);
   assert.deepEqual(await reopened.get(applicant), app);
-  async function submitPage(page: number, lore = link, action = 'answers-v3', answers: Record<string, string> = {}) {
+  async function submitPage(page: number, lore = link, action = 'answers-v3', answers: Record<string, string> = {}, id?: string) {
     const replies: unknown[] = [];
     const interaction = {
-      user: { id: applicant }, guild: discordGuild, guildId, customId: `al:${action}:${page}`,
+      user: { id: applicant }, guild: discordGuild, guildId, customId: `al:${action}:${page}${id ? `:${id}` : ''}`,
       isChatInputCommand: () => false, isButton: () => false, isStringSelectMenu: () => false, isModalSubmit: () => true,
       isFromMessage: () => page > 0, message: { flags: { has: () => true } },
       fields: { getTextInputValue: (id: string) => answers[id] ?? (id === 'character' ? 'Ada Bell' : id === '16' ? lore : 'Minha resposta de teste.') },
@@ -290,9 +293,66 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
     deferReply: async () => undefined,
   } as unknown as Interaction, service), /resultado desta ficha já foi publicado/);
   assert.equal(staleEdits.length, 1);
-  assert.equal(privateNotices.length, 1);
+  assert.equal(privateNotices.length, decision === 'rejected' ? 2 : 1);
   assert.equal(sent.filter(message => message.channelId === config.resultChannelId).length, 1);
   assert.deepEqual(sent[1]?.options.allowedMentions, { parse: [], users: [applicant] });
   assert.match(JSON.stringify(sent[1]?.options.embeds), new RegExp(decision === 'approved' ? 'ALLOWLIST APROVADA' : 'ALLOWLIST REPROVADA'));
   assert.doesNotMatch(JSON.stringify(sent[1]?.options), /Minha resposta|historiaabc/);
+  if (decision === 'approved') return;
+
+  assert.equal((await reopened.get(applicant))?.rejectionDm, 'sent');
+  assert.equal(privateNotices[1]?.userId, applicant);
+  assert.match(privateNotices[1]?.options.content ?? '', /candidatura no Ascendio RP foi reprovada/);
+  assert.match(privateNotices[1]?.options.content ?? '', /\*\*2 chances\*\*/);
+  assert.match(JSON.stringify(privateNotices[1]?.options.components), new RegExp(config.panelChannelId));
+  assert.match(JSON.stringify(applicationCard(app, config.scheduleChannelId, config.resultChannelId)), /Refazer Allowlist/);
+
+  const retryReplies: unknown[] = [];
+  await allowlistInteraction({
+    user: { id: applicant }, guild: discordGuild, guildId, customId: `al:retry:${app.id}`,
+    isChatInputCommand: () => false, isButton: () => true, isStringSelectMenu: () => false, isModalSubmit: () => false,
+    deferUpdate: async () => undefined, editReply: async (reply: unknown) => { retryReplies.push(reply); },
+  } as unknown as Interaction, service);
+  const second = (await reopened.get(applicant))!;
+  assert.notEqual(second.id, app.id);
+  assert.equal(second.stage, 'draft');
+  assert.deepEqual(second.answers, {});
+  assert.equal(second.previousAttempts?.[0]?.resultId, app.resultId);
+  assert.match(JSON.stringify(retryReplies[0]), /Tentativa 2 de 3/);
+  await assert.rejects(service.startRetry(applicant, app.id), /ficha atual/);
+  await assert.rejects(service.startRetry(staff, app.id), /ficha atual/);
+  await assert.rejects(submitPage(0), /ficha anterior/);
+  await submitPage(0, link, 'answers-v3', {}, second.id);
+  assert.equal((await reopened.get(applicant))?.answers['2'], 'Minha resposta de teste.');
+  const archivedReplies: unknown[] = [];
+  await allowlistInteraction({
+    user: { id: staff }, guild: discordGuild, guildId, channelId: config.reviewChannelId,
+    customId: `al:read:${applicant}:${app.id}`, message: { id: app.reviewId }, values: ['4'],
+    isChatInputCommand: () => false, isButton: () => false, isStringSelectMenu: () => true, isModalSubmit: () => false,
+    deferReply: async () => undefined, editReply: async (reply: unknown) => { archivedReplies.push(reply); },
+  } as unknown as Interaction, service);
+  assert.ok(JSON.stringify(archivedReplies).includes(link));
+
+  Object.assign(second, { character: app.character, answers: { ...app.answers } });
+  await service.submit(second);
+  loseResultResponse = true;
+  blockRejectionDm = true;
+  await assert.rejects(service.publishDecision(second, discordGuild, staff, 'rejected'), /Resposta da publicação perdida/);
+  await service.publishDecision(second, discordGuild, staff, 'rejected');
+  assert.notEqual(second.resultId, app.resultId);
+  assert.equal(second.rejectionDm, 'failed');
+  assert.match(privateNotices[2]?.options.content ?? '', /\*\*1 chance\*\*/);
+
+  const third = await service.startRetry(applicant, second.id);
+  Object.assign(third, { character: app.character, answers: { ...app.answers } });
+  await service.submit(third);
+  blockRejectionDm = false;
+  await service.publishDecision(third, discordGuild, staff, 'rejected');
+  assert.equal(third.previousAttempts?.length, 2);
+  assert.equal(third.rejectionDm, 'sent');
+  assert.match(privateNotices[3]?.options.content ?? '', /usou as \*\*3 tentativas\*\*/);
+  assert.doesNotMatch(JSON.stringify(privateNotices[3]?.options), /Refazer Allowlist|Abrir painel da Allowlist/);
+  assert.equal(applicationCard(third, config.scheduleChannelId, config.resultChannelId).components.length, 0);
+  await assert.rejects(service.startRetry(applicant, third.id), /todas as tentativas/);
+  assert.equal(sent.filter(message => message.channelId === config.resultChannelId).length, 3);
 });

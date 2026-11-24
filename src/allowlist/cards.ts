@@ -2,7 +2,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, escapeMarkdown, StringSel
 import { safeText, UserError } from '../validation/input.js';
 import { questions, sections } from './questions.js';
 import { resumePage } from './form.js';
-import type { Application, Decision } from './store.js';
+import { allowlistAttemptLimit, attemptNumber, retriesRemaining, type Application, type Decision } from './store.js';
 
 const gold = 0xb69a60;
 const green = 0x51b96e;
@@ -36,8 +36,32 @@ export function applicationReady(app?: Application) {
   return Boolean(app?.character && questions.every(question => app.answers[question.id]));
 }
 
+function rejectionDetails(app: Application) {
+  const remaining = retriesRemaining(app);
+  if (remaining === 0) return `Você usou as **${allowlistAttemptLimit} tentativas** da Allowlist. Se precisar de orientação, fale com a staff.`;
+  return remaining === 1
+    ? 'Você ainda tem **1 chance** de refazer a Allowlist.'
+    : `Você ainda tem **${remaining} chances** de refazer a Allowlist.`;
+}
+
+export function rejectionNotice(app: Application, resultUrl: string, panelUrl: string) {
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Ver resultado').setURL(resultUrl),
+  );
+  if (retriesRemaining(app) > 0) row.addComponents(
+    new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Abrir painel da Allowlist').setURL(panelUrl),
+  );
+  return {
+    content: '**Sua candidatura no Ascendio RP foi reprovada.**\n\nAgradecemos por participar da avaliação. ' + rejectionDetails(app)
+      + (retriesRemaining(app) > 0 ? ' Abra o painel e escolha **Refazer Allowlist** para começar uma nova ficha.' : ''),
+    components: [row],
+    allowedMentions: silent,
+  };
+}
+
 export function applicationCard(app: Application | undefined, scheduleChannelId: string, resultChannelId: string, nextPage?: number) {
   const stage = app?.stage ?? 'draft';
+  const pageSuffix = app ? `:${app.id}` : '';
   const states = {
     submitting: 'Seu envio ficou pendente. Use o botão abaixo para concluir.',
     review: 'Sua ficha está com a equipe para análise.' + (app?.nicknameApplied === false ? '\nO Discord recusou a atualização do seu apelido neste servidor.' : ''),
@@ -47,21 +71,28 @@ export function applicationCard(app: Application | undefined, scheduleChannelId:
     rejected: `A equipe concluiu sua avaliação e sua candidatura não foi aprovada desta vez. Confira o resultado em <#${resultChannelId}>.`,
   };
   const components: ActionRowBuilder<ButtonBuilder>[] = [];
-  if (stage === 'submitting') components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(button('send', 'Concluir envio', ButtonStyle.Primary)));
+  if (stage === 'submitting') components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(button(`send${pageSuffix}`, 'Concluir envio', ButtonStyle.Primary)));
   if (stage !== 'draft') {
     const color = stage === 'approved' ? green : stage === 'rejected' ? red : gold;
-    return { embeds: [{ title: '📜 Minha Allowlist', description: states[stage], color, footer }], components, allowedMentions: silent };
+    let description = states[stage];
+    if (app?.stage === 'rejected') {
+      description += `\n\n${rejectionDetails(app)}`;
+      if (retriesRemaining(app) > 0) components.push(new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(button(`retry:${app.id}`, 'Refazer Allowlist', ButtonStyle.Primary)));
+    }
+    return { embeds: [{ title: '📜 Minha Allowlist', description, color, footer }], components, allowedMentions: silent };
   }
   const count = questions.filter(question => app?.answers[question.id] && (question.id !== '16' || app.character)).length;
   const progress = `**${count} de ${questions.length} respostas salvas**`;
   const feedback = app?.feedback ? `\n\n**Ajustes solicitados pela equipe**\n${safeText(app.feedback)}` : '';
   const ready = nextPage === undefined && applicationReady(app);
-  const description = progress + (ready ? '\nSua ficha está pronta para análise.' : '') + feedback;
+  const attempt = app?.previousAttempts?.length ? `**Tentativa ${attemptNumber(app)} de ${allowlistAttemptLimit}**\n` : '';
+  const description = attempt + progress + (ready ? '\nSua ficha está pronta para análise.' : '') + feedback;
   const page = nextPage ?? (app?.feedback ? 0 : resumePage(app));
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(ready
-    ? button('send', 'Enviar para análise', ButtonStyle.Success)
-    : button(`page-v3:${page}`, count ? 'Continuar' : 'Começar', ButtonStyle.Primary));
-  if (ready || page > 0) row.addComponents(button('page-v3:0', 'Revisar do início'));
+    ? button(`send${pageSuffix}`, 'Enviar para análise', ButtonStyle.Success)
+    : button(`page-v3:${page}${pageSuffix}`, count ? 'Continuar' : 'Começar', ButtonStyle.Primary));
+  if (ready || page > 0) row.addComponents(button(`page-v3:0${pageSuffix}`, 'Revisar do início'));
   components.push(row);
   return { embeds: [{ title: '📜 Minha Allowlist', description, color: gold, footer }], components, allowedMentions: silent };
 }
@@ -115,6 +146,7 @@ export function reviewCard(app: Application) {
   const details = [
     `**Jogador** · <@${app.userId}>`,
     `**Personagem** · ${safeText(escapeMarkdown(app.character))}`,
+    `**Tentativa** · ${attemptNumber(app)} de ${allowlistAttemptLimit}`,
     ...audit,
   ];
   return {

@@ -5,9 +5,14 @@ import { answersCard, applicationCard, applicationReady, sectionAt, silent } fro
 import { allowlistForm, pageCount, pageQuestions, parseLegacyForm, readLegacyForm, restoreLegacyDraft, resumePage } from './form.js';
 import { answerLimit, loreLink, questionAt, type Question } from './questions.js';
 import type { Allowlist } from './service.js';
-import { newApplication } from './store.js';
+import { newApplication, type Application } from './store.js';
 
 type Component = ButtonInteraction | ModalSubmitInteraction | StringSelectMenuInteraction;
+
+function requireCurrentAttempt(app: Application | undefined, applicationId?: string) {
+  if (applicationId ? app?.id === applicationId : !app?.previousAttempts?.length) return;
+  throw new UserError('Este controle pertence a uma ficha anterior. Abra o painel para acessar a ficha atual.');
+}
 
 async function submitLegacyForm(i: ModalSubmitInteraction, allowlist: Allowlist) {
   await i.deferReply({ flags: MessageFlags.Ephemeral });
@@ -15,6 +20,7 @@ async function submitLegacyForm(i: ModalSubmitInteraction, allowlist: Allowlist)
   return store.run(i.user.id, async () => {
     const app = await store.get(i.user.id) ?? newApplication(i.user.id);
     if (app.stage !== 'draft') throw new UserError('Sua ficha já foi enviada. Consulte o status pelo painel.');
+    requireCurrentAttempt(app);
     const values = readLegacyForm(id => i.fields.getTextInputValue(id));
     try {
       Object.assign(app, parseLegacyForm(values));
@@ -31,13 +37,14 @@ async function submitLegacyForm(i: ModalSubmitInteraction, allowlist: Allowlist)
   });
 }
 
-async function saveAnswers(i: ModalSubmitInteraction, allowlist: Allowlist, prompts: readonly Question[], page?: number) {
+async function saveAnswers(i: ModalSubmitInteraction, allowlist: Allowlist, prompts: readonly Question[], page?: number, applicationId?: string) {
   if (i.isFromMessage() && i.message.flags.has(MessageFlags.Ephemeral)) await i.deferUpdate();
   else await i.deferReply({ flags: MessageFlags.Ephemeral });
   const { store, config } = allowlist;
   return store.run(i.user.id, async () => {
     const app = restoreLegacyDraft(await store.get(i.user.id)) ?? newApplication(i.user.id);
     if (app.stage !== 'draft') throw new UserError('Sua ficha já foi enviada. Consulte o status no painel.');
+    requireCurrentAttempt(app, applicationId);
     let problem: string | undefined;
     for (const question of prompts) {
       try {
@@ -79,9 +86,11 @@ async function staffAction(i: Component, allowlist: Allowlist, action: string, u
     ]));
   }
   return allowlist.store.run(userId, async () => {
-    const app = await allowlist.store.get(userId);
+    const current = await allowlist.store.get(userId);
+    const app = current?.id === applicationId ? current : current?.previousAttempts?.find(previous => previous.id === applicationId);
     if (app?.id !== applicationId || app.reviewId !== message.id || app.stage === 'draft') throw new UserError('Esta ficha já foi atualizada. Use o card mais recente.');
     if (action === 'read' && i.isStringSelectMenu()) return i.editReply(answersCard(app, i.values[0] ?? ''));
+    if (app !== current) throw new UserError('O resultado desta ficha já foi publicado.');
     if (app.stage === 'approved' || app.stage === 'rejected') {
       await allowlist.refreshReview(message, app);
       throw new UserError('O resultado desta ficha já foi publicado.');
@@ -102,6 +111,7 @@ async function staffAction(i: Component, allowlist: Allowlist, action: string, u
       }
       const outcome = decision === 'approved' ? 'Entrevista aprovada.' : 'Reprovação publicada.';
       confirmation = `${outcome} [Abrir o resultado](https://discord.com/channels/${allowlist.guildId}/${allowlist.config.resultChannelId}/${app.resultId})`;
+      if (app.rejectionDm === 'failed') confirmation += ' O Discord recusou o aviso por mensagem privada.';
     } else if (action === 'adjust-save' && i.isModalSubmit() && app.stage === 'review') {
       app.feedback = text(i.fields.getTextInputValue('feedback'), 800, 'Orientação da equipe');
       app.stage = 'draft';
@@ -138,9 +148,15 @@ export async function allowlistInteraction(i: Interaction, allowlist: Allowlist 
       ? i.reply({ ...view, flags: MessageFlags.Ephemeral })
       : i.update({ content: null, ...view });
   }
+  if (action === 'retry' && i.isButton()) {
+    await i.deferUpdate();
+    const app = await allowlist.startRetry(i.user.id, key);
+    return i.editReply({ content: null, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId) });
+  }
   if ((i.isButton() && ['page-v3', 'page-v2', 'page', 'form', 'section', 'edit', 'next'].includes(action ?? '')) || (i.isStringSelectMenu() && action === 'choose')) {
     const app = await load();
     if (app && app.stage !== 'draft') return i.update({ content: null, ...applicationCard(app, config.scheduleChannelId, config.resultChannelId) });
+    requireCurrentAttempt(app, appId);
     let page = resumePage(app);
     if (action === 'page-v3') page = Number(key);
     else if ((action === 'page' || action === 'page-v2') && key === '0') page = 0;
@@ -149,7 +165,7 @@ export async function allowlistInteraction(i: Interaction, allowlist: Allowlist 
   if (action === 'submit-form' && i.isModalSubmit()) return submitLegacyForm(i, allowlist);
   if (action === 'answers-v3' && i.isModalSubmit()) {
     const page = Number(key);
-    return saveAnswers(i, allowlist, pageQuestions(page), page);
+    return saveAnswers(i, allowlist, pageQuestions(page), page, appId);
   }
   if (action === 'answers-v2' && i.isModalSubmit()) return saveAnswers(i, allowlist, pageQuestions(Number(key), 3));
   if (action === 'answers' && i.isModalSubmit()) return saveAnswers(i, allowlist, pageQuestions(Number(key), 2));
@@ -162,6 +178,7 @@ export async function allowlistInteraction(i: Interaction, allowlist: Allowlist 
     await store.run(i.user.id, async () => {
       const app = await load();
       if (!app) throw new UserError('Responda às 16 perguntas antes de enviar.');
+      requireCurrentAttempt(app, key);
       await allowlist.submit(app);
     });
     return i.editReply({ content: null, ...await dashboard() });

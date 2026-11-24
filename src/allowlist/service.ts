@@ -3,8 +3,8 @@ import { joinRole } from '../events/member-role.js';
 import { errorCode, log } from '../logs/logger.js';
 import { target } from '../services/discord.js';
 import { snowflake, UserError } from '../validation/input.js';
-import { applicationReady, panelCard, resultCard, reviewCard, storyButton } from './cards.js';
-import { AllowlistStore, newApplication, type Application, type Decision } from './store.js';
+import { applicationReady, panelCard, rejectionNotice, resultCard, reviewCard, storyButton } from './cards.js';
+import { AllowlistStore, newApplication, retriesRemaining, type Application, type Decision } from './store.js';
 
 export interface AllowlistConfig {
   panelChannelId: string;
@@ -145,6 +145,25 @@ export class Allowlist {
     });
   }
 
+  async startRetry(userId: string, applicationId: string | undefined) {
+    return this.store.run(userId, async () => {
+      const app = await this.store.get(userId);
+      if (!app || app.id !== applicationId || app.stage !== 'rejected') {
+        throw new UserError('Abra o painel para consultar sua ficha atual.');
+      }
+      if (retriesRemaining(app) === 0) throw new UserError('Você já usou todas as tentativas da Allowlist.');
+      await this.notifyRejection(app);
+      const { previousAttempts = [], ...previous } = app;
+      const next: Application = {
+        ...newApplication(userId),
+        previousAttempts: [...previousAttempts, previous],
+        ownerResetRequest: app.ownerResetRequest,
+      };
+      await this.store.save(next);
+      return next;
+    });
+  }
+
   async submit(app: Application) {
     if (app.stage !== 'draft' && app.stage !== 'submitting') throw new UserError('Sua ficha já foi enviada para a equipe.');
     if (!applicationReady(app)) throw new UserError('Responda às 16 perguntas antes de enviar.');
@@ -208,7 +227,7 @@ export class Allowlist {
   }
 
   async publishDecision(app: Application, guild: Guild, staffId: string, decision: Decision) {
-    if (app.stage === decision) return;
+    if (app.stage === decision) return this.notifyRejection(app);
     const retry = app.stage === 'publishing';
     if (retry && (app.resultDecision ?? 'approved') !== decision) {
       throw new UserError('Já existe outro resultado em publicação para esta ficha.');
@@ -232,11 +251,32 @@ export class Allowlist {
     }
     const post = resultCard(app, decision);
     const existing = retry && await findRecent(channel, app.resultStartedAt! - 10_000, message =>
-      message.author.id === this.client.user?.id && message.content === post.content && message.embeds[0]?.title === post.embeds[0]?.title);
+      message.author.id === this.client.user?.id && message.content === post.content && message.embeds[0]?.title === post.embeds[0]?.title
+        && !app.previousAttempts?.some(previous => previous.resultId === message.id));
     const message = existing || await channel.send({ ...post, nonce: `al-f-${app.id}`, enforceNonce: true } satisfies MessageCreateOptions);
     app.resultId = message.id;
     app.stage = decision;
     app.decidedAt = Date.now();
+    if (decision === 'rejected') app.rejectionDm = 'pending';
+    await this.store.save(app);
+    await this.notifyRejection(app);
+  }
+
+  private async notifyRejection(app: Application) {
+    if (app.stage !== 'rejected' || app.rejectionDm !== 'pending' || !app.resultId) return;
+    const result = `https://discord.com/channels/${this.guildId}/${this.config.resultChannelId}/${app.resultId}`;
+    const panel = `https://discord.com/channels/${this.guildId}/${this.config.panelChannelId}`;
+    try {
+      await this.client.users.send(app.userId, {
+        ...rejectionNotice(app, result, panel),
+        nonce: `al-n-${app.id}`,
+        enforceNonce: true,
+      });
+      app.rejectionDm = 'sent';
+    } catch (error) {
+      app.rejectionDm = 'failed';
+      log('allowlist_rejection_dm_failed', { guildId: this.guildId, userId: app.userId, code: errorCode(error) }, 'warn');
+    }
     await this.store.save(app);
   }
 
@@ -246,7 +286,9 @@ export class Allowlist {
       try {
         await this.store.run(userId, async () => {
           const app = await this.store.get(userId);
-          if (!app?.reviewId || !['review', 'awaiting', 'publishing', 'approved', 'rejected'].includes(app.stage)) return;
+          if (!app) return;
+          await this.notifyRejection(app);
+          if (!app.reviewId || !['review', 'awaiting', 'publishing', 'approved', 'rejected'].includes(app.stage)) return;
           const message = await channel.messages.fetch({ message: app.reviewId, cache: false });
           if (message.author.id !== this.client.user?.id) return;
           const buttonLabel = app.stage === 'publishing' ? 'Concluir publicação' : 'Reprovar e publicar';

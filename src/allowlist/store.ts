@@ -5,7 +5,7 @@ import { snowflake, UserError } from '../validation/input.js';
 
 export type Decision = 'approved' | 'rejected';
 export type Stage = 'draft' | 'submitting' | 'review' | 'awaiting' | 'publishing' | Decision;
-export interface Application {
+interface ApplicationRecord {
   id: string;
   userId: string;
   character: string;
@@ -21,11 +21,25 @@ export interface Application {
   resultId?: string;
   reviewerId?: string;
   formApprovalDm?: 'sent' | 'failed';
+  rejectionDm?: 'pending' | 'sent' | 'failed';
   nicknameApplied?: boolean;
   interviewerId?: string;
   rejectedById?: string;
   feedback?: string;
   ownerResetRequest?: string;
+}
+
+export interface Application extends ApplicationRecord {
+  previousAttempts?: ApplicationRecord[];
+}
+
+export const allowlistAttemptLimit = 3;
+export function attemptNumber(app: Application) {
+  return (app.previousAttempts?.length ?? 0) + 1;
+}
+
+export function retriesRemaining(app: Application) {
+  return Math.max(0, allowlistAttemptLimit - attemptNumber(app));
 }
 
 export function newApplication(userId: string): Application {

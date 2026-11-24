@@ -33,7 +33,8 @@ function inputLabel(id: string, label: string, value: string | undefined, max: n
 }
 
 export function allowlistForm(page: number, app?: Application) {
-  const modal = new ModalBuilder().setCustomId(`al:answers-v3:${page}`).setTitle(`Allowlist • ${page + 1} de ${pageCount}`);
+  const suffix = app ? `:${app.id}` : '';
+  const modal = new ModalBuilder().setCustomId(`al:answers-v3:${page}${suffix}`).setTitle(`Allowlist • ${page + 1} de ${pageCount}`);
   for (const question of pageQuestions(page)) {
     modal.addTextDisplayComponents(new TextDisplayBuilder().setContent(`**${question.id}.** ${question.prompt}`));
     if (question.id === '16') {
