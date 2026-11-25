@@ -99,6 +99,8 @@ async function staffAction(i: Component, allowlist: Allowlist, action: string, u
     if (action === 'form-pass' && i.isButton()) {
       await allowlist.approveForm(app, guild, i.user.id);
       confirmation = `Formulário aprovado. O candidato pode combinar o horário em <#${allowlist.config.scheduleChannelId}>.`;
+      if (app.formApprovalResultId === null) confirmation += ' A publicação no canal de resultados está pendente. Use **Publicar aprovação do formulário** para tentar novamente.';
+      else if (app.formApprovalResultId) confirmation += ` [Ver aprovação do formulário](https://discord.com/channels/${allowlist.guildId}/${allowlist.config.resultChannelId}/${app.formApprovalResultId}).`;
       if (app.formApprovalDm === 'failed') confirmation += ' O Discord recusou o envio da mensagem privada.';
     } else if ((action === 'interview-pass' || action === 'reject') && i.isButton()) {
       const decision = action === 'reject' ? 'rejected' : 'approved';

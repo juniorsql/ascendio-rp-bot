@@ -162,6 +162,7 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   const everyone = { id: guildId, type: OverwriteType.Role, allow: new PermissionsBitField(), deny: new PermissionsBitField(PermissionFlagsBits.ViewChannel) };
   const sent: Array<{ channelId: string; options: MessageCreateOptions }> = [];
   let loseResultResponse = decision === 'rejected';
+  let loseFormApprovalResponse = decision === 'approved';
   let blockRejectionDm = false;
   const history = new Map<string, Collection<string, unknown>>();
   const client = { user: { id: botId },
@@ -181,7 +182,11 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
       const messages = history.get(channelId) ?? new Collection<string, unknown>();
       messages.set(id, { id, author: { id: botId }, createdTimestamp: Date.now(), content: options.content, embeds: options.embeds });
       history.set(channelId, messages);
-      if (channelId === config.resultChannelId && loseResultResponse) {
+      if (channelId === config.resultChannelId && String(options.nonce).startsWith('al-a-') && loseFormApprovalResponse) {
+        loseFormApprovalResponse = false;
+        throw Error('Resposta da publicação recebida com atraso.');
+      }
+      if (channelId === config.resultChannelId && String(options.nonce).startsWith('al-f-') && loseResultResponse) {
         loseResultResponse = false;
         throw Error('Resposta da publicação perdida.');
       }
@@ -253,11 +258,24 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   assert.match(JSON.stringify(reviewCard(app).components), /Reprovar e publicar/);
   await assert.rejects(service.publishDecision(app, discordGuild, staff, 'approved'), /etapa atual/);
   await service.approveForm(app, discordGuild, staff);
+  if (decision === 'approved') {
+    assert.equal((await reopened.get(applicant))?.formApprovalResultId, null);
+    assert.match(JSON.stringify(reviewCard(app).components), /Publicar aprovação do formulário/);
+  }
   await service.approveForm(app, discordGuild, staff);
   assert.equal(privateNotices.length, 1);
   assert.equal(app.formApprovalDm, decision === 'approved' ? 'sent' : 'failed');
   assert.equal(privateNotices[0]?.userId, applicant);
+  assert.match(privateNotices[0]?.options.content ?? '', /recebeu o cargo \*\*Aguardando Entrevista\*\*/);
   assert.match(privateNotices[0]?.options.content ?? '', new RegExp(config.scheduleChannelId));
+  const announcements = () => sent.filter(message => message.channelId === config.resultChannelId);
+  assert.equal(announcements().length, 1);
+  assert.ok((await reopened.get(applicant))?.formApprovalResultId);
+  const approval = announcements()[0]?.options;
+  assert.deepEqual(approval?.allowedMentions, { parse: [], users: [applicant] });
+  assert.match(JSON.stringify(approval?.embeds), /FORMULÁRIO APROVADO/);
+  assert.match(JSON.stringify(approval?.embeds), new RegExp(config.scheduleChannelId));
+  assert.doesNotMatch(JSON.stringify(approval?.embeds), /Minha resposta|historiaabc/);
   assert.equal(app.stage, 'awaiting');
   assert.ok(app.formApprovedAt);
   assert.equal(applicantRoles.has(config.waitingRoleId), true);
@@ -294,10 +312,11 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   } as unknown as Interaction, service), /resultado desta ficha já foi publicado/);
   assert.equal(staleEdits.length, 1);
   assert.equal(privateNotices.length, decision === 'rejected' ? 2 : 1);
-  assert.equal(sent.filter(message => message.channelId === config.resultChannelId).length, 1);
-  assert.deepEqual(sent[1]?.options.allowedMentions, { parse: [], users: [applicant] });
-  assert.match(JSON.stringify(sent[1]?.options.embeds), new RegExp(decision === 'approved' ? 'ALLOWLIST APROVADA' : 'ALLOWLIST REPROVADA'));
-  assert.doesNotMatch(JSON.stringify(sent[1]?.options), /Minha resposta|historiaabc/);
+  assert.equal(announcements().length, 2);
+  const result = announcements()[1]?.options;
+  assert.deepEqual(result?.allowedMentions, { parse: [], users: [applicant] });
+  assert.match(JSON.stringify(result?.embeds), new RegExp(decision === 'approved' ? 'ALLOWLIST APROVADA' : 'ALLOWLIST REPROVADA'));
+  assert.doesNotMatch(JSON.stringify(result), /Minha resposta|historiaabc/);
   if (decision === 'approved') return;
 
   assert.equal((await reopened.get(applicant))?.rejectionDm, 'sent');
@@ -354,5 +373,5 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   assert.doesNotMatch(JSON.stringify(privateNotices[3]?.options), /Refazer Allowlist|Abrir painel da Allowlist/);
   assert.equal(applicationCard(third, config.scheduleChannelId, config.resultChannelId).components.length, 0);
   await assert.rejects(service.startRetry(applicant, third.id), /todas as tentativas/);
-  assert.equal(sent.filter(message => message.channelId === config.resultChannelId).length, 3);
+  assert.equal(announcements().length, 4);
 });

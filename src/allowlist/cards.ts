@@ -119,6 +119,9 @@ export function reviewCard(app: Application) {
     button(`adjust:${key}`, 'Pedir ajustes'),
   );
   if (stage === 'awaiting') controls.addComponents(button(`interview-pass:${key}`, 'Aprovar entrevista e publicar', ButtonStyle.Success));
+  if (stage === 'awaiting' && app.formApprovalResultId === null) controls.addComponents(
+    button(`form-pass:${key}`, 'Publicar aprovação do formulário', ButtonStyle.Primary),
+  );
   if (stage === 'review' || stage === 'awaiting') controls.addComponents(button(`reject:${key}`, 'Reprovar e publicar', ButtonStyle.Danger));
   if (stage === 'approved' || stage === 'rejected') controls.addComponents(
     button(`interview-pass:${key}`, 'Aprovar entrevista e publicar', ButtonStyle.Success).setDisabled(true),
@@ -148,6 +151,7 @@ export function reviewCard(app: Application) {
     `**Personagem** · ${safeText(escapeMarkdown(app.character))}`,
     `**Tentativa** · ${attemptNumber(app)} de ${allowlistAttemptLimit}`,
     ...audit,
+    ...(stage === 'awaiting' && app.formApprovalResultId === null ? ['A publicação da aprovação no canal de resultados está pendente.'] : []),
   ];
   return {
     embeds: [{ title: titles[stage], color: stage === 'approved' ? green : stage === 'rejected' ? red : gold,
@@ -191,6 +195,20 @@ export function resultCard(app: Application, decision: Decision) {
         { name: 'Jogador', value: `<@${app.userId}>`, inline: true },
       ],
       footer,
+    }],
+    allowedMentions: { parse: [] as never[], users: [app.userId] },
+  };
+}
+
+export function formApprovalResultCard(app: Application, scheduleChannelId: string) {
+  return {
+    content: `<@${app.userId}>`,
+    embeds: [{
+      title: '✦ FORMULÁRIO APROVADO ✦',
+      description: `Parabéns! Seu formulário da Allowlist foi aprovado. Você recebeu o cargo **Aguardando Entrevista**.\n\nFique de olho em <#${scheduleChannelId}> e envie sua disponibilidade para combinar o horário com a staff.`,
+      color: gold,
+      fields: [{ name: 'Personagem', value: safeText(escapeMarkdown(app.character)) }],
+      footer: { text: `${footer.text} • Ficha ${app.id}` },
     }],
     allowedMentions: { parse: [] as never[], users: [app.userId] },
   };

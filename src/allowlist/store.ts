@@ -21,6 +21,7 @@ interface ApplicationRecord {
   resultId?: string;
   reviewerId?: string;
   formApprovalDm?: 'sent' | 'failed';
+  formApprovalResultId?: string | null;
   rejectionDm?: 'pending' | 'sent' | 'failed';
   nicknameApplied?: boolean;
   interviewerId?: string;

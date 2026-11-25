@@ -3,7 +3,7 @@ import { joinRole } from '../events/member-role.js';
 import { errorCode, log } from '../logs/logger.js';
 import { target } from '../services/discord.js';
 import { snowflake, UserError } from '../validation/input.js';
-import { applicationReady, panelCard, rejectionNotice, resultCard, reviewCard, storyButton } from './cards.js';
+import { applicationReady, formApprovalResultCard, panelCard, rejectionNotice, resultCard, reviewCard, storyButton } from './cards.js';
 import { AllowlistStore, newApplication, retriesRemaining, type Application, type Decision } from './store.js';
 
 export interface AllowlistConfig {
@@ -203,16 +203,37 @@ export class Allowlist {
       const role = await joinRole(guild, this.config.waitingRoleId);
       const candidate = await guild.members.fetch({ user: app.userId, force: true, cache: false });
       if (candidate.pending) throw new UserError('O candidato precisa concluir a entrada no Discord antes de receber o cargo.');
-      await candidate.roles.add(role.id, 'Formulário de Allowlist aprovado');
+      if (!candidate.roles.cache.has(role.id)) await candidate.roles.add(role.id, 'Formulário de Allowlist aprovado');
       app.stage = 'awaiting';
       app.reviewerId = reviewerId;
       app.formApprovedAt = Date.now();
+      app.formApprovalResultId = null;
       await this.store.save(app);
     }
+    await this.finishFormApproval(app);
+  }
+
+  private async finishFormApproval(app: Application) {
+    await this.notifyFormApproval(app);
+    if (app.formApprovalResultId !== null) return;
+    try {
+      const channel = await this.channel(this.config.resultChannelId);
+      const post = formApprovalResultCard(app, this.config.scheduleChannelId);
+      const existing = await findRecent(channel, (app.formApprovedAt ?? Date.now()) - 10_000, message =>
+        message.author.id === this.client.user?.id && message.embeds[0]?.footer?.text === post.embeds[0]!.footer.text);
+      const message = existing ?? await channel.send({ ...post, nonce: `al-a-${app.id}`, enforceNonce: true });
+      await this.store.save({ ...app, formApprovalResultId: message.id });
+      app.formApprovalResultId = message.id;
+    } catch (error) {
+      log('allowlist_form_approval_result_pending', { guildId: this.guildId, userId: app.userId, code: errorCode(error) }, 'warn');
+    }
+  }
+
+  private async notifyFormApproval(app: Application) {
     if (app.formApprovalDm) return;
     try {
       await this.client.users.send(app.userId, {
-        content: '✨ **Seu formulário da Allowlist foi aprovado!**\n\nVocê deu mais um passo para entrar no Ascendio RP. Envie sua disponibilidade no chat de agendamento para combinar o horário com a staff. Boa sorte!\n\n'
+        content: '✨ **Seu formulário da Allowlist foi aprovado!**\n\nParabéns! Você recebeu o cargo **Aguardando Entrevista** no Ascendio RP. Fique de olho no canal de agendamento e envie sua disponibilidade para combinar o horário com a staff. Boa sorte!\n\n'
           + `[Agendar entrevista](https://discord.com/channels/${this.guildId}/${this.config.scheduleChannelId})`,
         allowedMentions: { parse: [] },
         nonce: `al-d-${app.id}`,
@@ -234,6 +255,10 @@ export class Allowlist {
     }
     if (!retry && app.stage !== 'awaiting' && !(app.stage === 'review' && decision === 'rejected')) {
       throw new UserError('Este resultado não está disponível para a etapa atual da ficha.');
+    }
+    if (app.formApprovalResultId === null) {
+      await this.finishFormApproval(app);
+      if (app.formApprovalResultId === null) throw new UserError('A publicação da aprovação do formulário ainda está pendente. Tente novamente.');
     }
     const channel = await this.channel(this.config.resultChannelId);
     const candidate = await guild.members.fetch({ user: app.userId, force: true, cache: false });
@@ -287,6 +312,7 @@ export class Allowlist {
         await this.store.run(userId, async () => {
           const app = await this.store.get(userId);
           if (!app) return;
+          if (app.stage === 'awaiting' && app.formApprovalResultId === null) await this.finishFormApproval(app);
           await this.notifyRejection(app);
           if (!app.reviewId || !['review', 'awaiting', 'publishing', 'approved', 'rejected'].includes(app.stage)) return;
           const message = await channel.messages.fetch({ message: app.reviewId, cache: false });
