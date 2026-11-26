@@ -1,4 +1,4 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, escapeMarkdown, StringSelectMenuBuilder, type APIEmbed } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, escapeMarkdown, type APIEmbed } from 'discord.js';
 import { safeText, UserError } from '../validation/input.js';
 import { questions, sections } from './questions.js';
 import { resumePage } from './form.js';
@@ -102,8 +102,9 @@ export function sectionAt(index: string | undefined) {
   return sections[Number(index)]!;
 }
 
-export function reviewCard(app: Application) {
+export function reviewCard(app: Application, page?: number) {
   const key = `${app.userId}:${app.id}`;
+  const action = (name: string) => page === undefined ? `${name}:${key}` : `q-${name}:${key}:${page}`;
   const stage = app.stage === 'submitting' ? 'review' : app.stage;
   const titles = {
     draft: '🔄 Ficha devolvida para ajustes',
@@ -115,35 +116,35 @@ export function reviewCard(app: Application) {
   };
   const controls = new ActionRowBuilder<ButtonBuilder>();
   if (stage === 'review') controls.addComponents(
-    button(`form-pass:${key}`, 'Aprovar formulário', ButtonStyle.Success),
-    button(`adjust:${key}`, 'Pedir ajustes'),
+    button(action('form-pass'), 'Aprovar formulário', ButtonStyle.Success),
+    button(action('adjust'), 'Pedir ajustes'),
   );
-  if (stage === 'awaiting') controls.addComponents(button(`interview-pass:${key}`, 'Aprovar entrevista e publicar', ButtonStyle.Success));
+  if (stage === 'awaiting') controls.addComponents(button(action('interview-pass'), 'Aprovar entrevista e publicar', ButtonStyle.Success));
   if (stage === 'awaiting' && app.formApprovalResultId === null) controls.addComponents(
-    button(`form-pass:${key}`, 'Publicar aprovação do formulário', ButtonStyle.Primary),
+    button(action('form-pass'), 'Publicar aprovação do formulário', ButtonStyle.Primary),
   );
-  if (stage === 'review' || stage === 'awaiting') controls.addComponents(button(`reject:${key}`, 'Reprovar e publicar', ButtonStyle.Danger));
+  if (stage === 'review' || stage === 'awaiting') controls.addComponents(button(action('reject'), 'Reprovar e publicar', ButtonStyle.Danger));
   if (stage === 'approved' || stage === 'rejected') controls.addComponents(
-    button(`interview-pass:${key}`, 'Aprovar entrevista e publicar', ButtonStyle.Success).setDisabled(true),
-    button(`reject:${key}`, 'Reprovar e publicar', ButtonStyle.Danger).setDisabled(true),
+    button(action('interview-pass'), 'Aprovar entrevista e publicar', ButtonStyle.Success).setDisabled(true),
+    button(action('reject'), 'Reprovar e publicar', ButtonStyle.Danger).setDisabled(true),
   );
   if (stage === 'publishing') {
-    const action = app.resultDecision === 'rejected' ? 'reject' : 'interview-pass';
-    controls.addComponents(button(`${action}:${key}`, 'Concluir publicação', ButtonStyle.Primary));
+    const decision = app.resultDecision === 'rejected' ? 'reject' : 'interview-pass';
+    controls.addComponents(button(action(decision), 'Concluir publicação', ButtonStyle.Primary));
   }
   const story = storyButton(app);
   if (story) controls.addComponents(story);
-  const read = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder()
-    .setCustomId(`al:read:${key}`).setPlaceholder('Ler respostas da ficha')
-    .addOptions(sections.map((section, index) => ({ label: section.title, value: String(index) }))));
-  const components = stage === 'draft' ? [] : [read, ...(controls.components.length ? [controls] : [])];
+  const read = new ActionRowBuilder<ButtonBuilder>().addComponents(button(`q-open:${key}:0`, 'Abrir ficha', ButtonStyle.Primary));
+  const components = stage === 'draft'
+    ? (page === undefined ? [] : (story ? [new ActionRowBuilder<ButtonBuilder>().addComponents(story)] : []))
+    : [...(page === undefined ? [read] : []), ...(controls.components.length ? [controls] : [])];
   const time = (at: number | undefined) => at ? `<t:${Math.floor(at / 1000)}:f>` : '';
   const record = (label: string, userId: string | undefined, at?: number) =>
     [`**${label}**`, userId && `<@${userId}>`, time(at)].filter(Boolean).join(' · ');
   const audit = [
     app.submittedAt && record('Enviada', undefined, app.submittedAt),
-    app.reviewerId && record('Formulário aprovado', app.reviewerId, app.formApprovedAt),
-    stage === 'approved' && app.interviewerId && record('Entrevista aprovada', app.interviewerId, app.decidedAt ?? app.resultStartedAt),
+    app.reviewerId && record('Formulário aprovado por', app.reviewerId, app.formApprovedAt),
+    stage === 'approved' && app.interviewerId && record('Entrevista aprovada por', app.interviewerId, app.decidedAt ?? app.resultStartedAt),
     stage === 'rejected' && app.rejectedById && record('Reprovada', app.rejectedById, app.decidedAt ?? app.resultStartedAt),
   ].filter(Boolean);
   const details = [

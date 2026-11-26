@@ -8,6 +8,7 @@ import { answersCard, applicationCard, panelCard, reviewCard } from '../src/allo
 import { allowlistForm, pageCount, pageQuestions, restoreLegacyDraft, resumePage } from '../src/allowlist/form.js';
 import { allowlistInteraction } from '../src/allowlist/handler.js';
 import { loreLink, questions } from '../src/allowlist/questions.js';
+import { queuePage, staffReading } from '../src/allowlist/queue.js';
 import { Allowlist, type AllowlistConfig } from '../src/allowlist/service.js';
 import { AllowlistStore, newApplication } from '../src/allowlist/store.js';
 
@@ -175,12 +176,15 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
     channels: { fetch: async (channelId: string) => ({
     id: channelId, type: ChannelType.GuildText, guildId, guild, permissionsFor: () => fullPermissions,
     permissionOverwrites: { cache: new Collection([[guildId, everyone]]) },
-    messages: { fetch: async () => history.get(channelId) ?? new Collection() },
+    messages: { fetch: async ({ message }: { message?: string }) => message
+      ? history.get(channelId)?.get(message)
+      : history.get(channelId) ?? new Collection() },
     send: async (options: MessageCreateOptions) => {
       const id = String(900000000000000000n + BigInt(sent.length));
       sent.push({ channelId, options });
       const messages = history.get(channelId) ?? new Collection<string, unknown>();
-      messages.set(id, { id, author: { id: botId }, createdTimestamp: Date.now(), content: options.content, embeds: options.embeds });
+      messages.set(id, { id, author: { id: botId }, createdTimestamp: Date.now(), content: options.content, embeds: options.embeds,
+        edit: async () => undefined });
       history.set(channelId, messages);
       if (channelId === config.resultChannelId && String(options.nonce).startsWith('al-a-') && loseFormApprovalResponse) {
         loseFormApprovalResponse = false;
@@ -257,7 +261,31 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   assert.equal(privateNotices.length, 0);
   assert.match(JSON.stringify(reviewCard(app).components), /Reprovar e publicar/);
   await assert.rejects(service.publishDecision(app, discordGuild, staff, 'approved'), /etapa atual/);
-  await service.approveForm(app, discordGuild, staff);
+  async function staffClick(id: string, user = staff, ephemeral = true) {
+    const calls: unknown[] = [];
+    await allowlistInteraction({
+      user: { id: user }, guild: discordGuild, guildId, channelId: config.reviewChannelId, customId: id,
+      message: { id: '223456789012345670', flags: { has: () => ephemeral } },
+      isChatInputCommand: () => false, isButton: () => true, isStringSelectMenu: () => false, isModalSubmit: () => false,
+      deferReply: async (options: unknown) => calls.push(options), deferUpdate: async () => calls.push('update'),
+      editReply: async (reply: unknown) => calls.push(reply),
+    } as unknown as Interaction, service);
+    return calls;
+  }
+  await assert.rejects(staffClick('al:q-list:pending:0', applicant, false), /exclusiva da equipe/);
+  const list = await staffClick('al:q-list:pending:0', staff, false);
+  assert.deepEqual(list[0], { flags: MessageFlags.Ephemeral });
+  assert.match(JSON.stringify(list[1]), /Ada Bell.*Aguardando análise/);
+  const key = `${applicant}:${app.id}`;
+  const reading = await staffClick(`al:q-open:${key}:1`);
+  assert.equal(reading[0], 'update');
+  assert.match(JSON.stringify(reading[1]), /Durante uma aula.*Minha resposta de teste/);
+  assert.match(JSON.stringify(reading[1]), /Abrir história/);
+  await assert.rejects(staffClick(`al:q-form-pass:${key}:1`, staff, false), /Abra a ficha pela fila/);
+  const approvalView = await staffClick(`al:q-form-pass:${key}:1`);
+  assert.equal(approvalView[0], 'update');
+  assert.match(JSON.stringify(approvalView[1]), /Formulário aprovado por/);
+  Object.assign(app, await reopened.get(applicant));
   if (decision === 'approved') {
     assert.equal((await reopened.get(applicant))?.formApprovalResultId, null);
     assert.match(JSON.stringify(reviewCard(app).components), /Publicar aprovação do formulário/);
@@ -298,7 +326,7 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   assert.match(card.embeds[0]?.description ?? '', /Formulário aprovado.*<t:\d+:f>/);
   assert.match(card.embeds[0]?.description ?? '', /(?:Entrevista aprovada|Reprovada).*<t:\d+:f>/);
   const buttons = card.components.map(row => row.toJSON().components).flat().filter(part => part.type === ComponentType.Button);
-  const decisionButtons = buttons.filter(part => 'custom_id' in part);
+  const decisionButtons = buttons.filter(part => 'custom_id' in part && !part.custom_id.startsWith('al:q-open:'));
   assert.equal(decisionButtons.length, 2);
   assert.ok(decisionButtons.every(part => part.disabled === true));
   assert.ok(buttons.some(part => 'url' in part && part.url === link && !part.disabled));
@@ -317,6 +345,10 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   assert.deepEqual(result?.allowedMentions, { parse: [], users: [applicant] });
   assert.match(JSON.stringify(result?.embeds), new RegExp(decision === 'approved' ? 'ALLOWLIST APROVADA' : 'ALLOWLIST REPROVADA'));
   assert.doesNotMatch(JSON.stringify(result), /Minha resposta|historiaabc/);
+  assert.match(JSON.stringify((await staffClick('al:q-list:pending:0'))[1]), /Nenhuma ficha aguardando/);
+  const historyView = (await staffClick('al:q-list:history:0'))[1];
+  assert.match(JSON.stringify(historyView), /Ada Bell/);
+  assert.match(JSON.stringify((await staffClick(`al:q-open:${key}:0`))[1]), new RegExp(decision === 'approved' ? 'Entrevista aprovada por' : 'Reprovada'));
   if (decision === 'approved') return;
 
   assert.equal((await reopened.get(applicant))?.rejectionDm, 'sent');
@@ -374,4 +406,34 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   assert.equal(applicationCard(third, config.scheduleChannelId, config.resultChannelId).components.length, 0);
   await assert.rejects(service.startRetry(applicant, third.id), /todas as tentativas/);
   assert.equal(announcements().length, 4);
+});
+
+test('fila pagina das fichas mais antigas e leitura mantém o texto completo dentro dos limites do Discord', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'ascendio-queue-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const store = new AllowlistStore(dir);
+  await store.init();
+  for (let n = 7; n >= 1; n--) {
+    const app = newApplication(String(600000000000000000n + BigInt(n)));
+    await store.save({ ...app, stage: 'review', character: `Personagem - ${n}`, submittedAt: n, reviewId: guildId });
+  }
+  const first = await queuePage(store, 'pending', 0);
+  const second = await queuePage(store, 'pending', 1);
+  assert.match(first.embeds[0]!.description, /Personagem - 1[\s\S]*Personagem - 5/);
+  assert.doesNotMatch(first.embeds[0]!.description, /Personagem - 6/);
+  assert.match(second.embeds[0]!.description, /Personagem - 6[\s\S]*Personagem - 7/);
+  assert.equal(first.components[0]!.toJSON().components.length, 5);
+  assert.equal(second.components[0]!.toJSON().components.length, 2);
+
+  const app = newApplication(applicant);
+  const answer = '*'.repeat(800);
+  const story = `https://example.org/${'x'.repeat(700)}`;
+  app.answers = { '1': answer, '2': answer, '16': story };
+  const reading = staffReading(app, 0);
+  const body = reading.embeds[1]?.description ?? '';
+  assert.ok(body.includes(questions[0]!.prompt));
+  assert.ok(body.includes(questions[1]!.prompt));
+  assert.equal(body.split('\n').filter(line => line.replaceAll('\\', '') === answer).length, 2);
+  assert.ok(body.length <= 4096);
+  assert.equal(staffReading(app, 7).embeds[1]?.url, story);
 });

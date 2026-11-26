@@ -6,6 +6,7 @@ import { allowlistForm, pageCount, pageQuestions, parseLegacyForm, readLegacyFor
 import { answerLimit, loreLink, questionAt, type Question } from './questions.js';
 import type { Allowlist } from './service.js';
 import { newApplication, type Application } from './store.js';
+import { queuePage, staffReading, validateReadingPage } from './queue.js';
 
 type Component = ButtonInteraction | ModalSubmitInteraction | StringSelectMenuInteraction;
 
@@ -72,27 +73,40 @@ async function saveAnswers(i: ModalSubmitInteraction, allowlist: Allowlist, prom
   });
 }
 
-async function staffAction(i: Component, allowlist: Allowlist, action: string, userId: string, applicationId: string) {
+function archivedAttempt(app: Application | undefined, id: string) {
+  const history = app?.previousAttempts ?? [];
+  const index = history.findIndex(previous => previous.id === id);
+  return index < 0 ? undefined : { ...history[index]!, previousAttempts: history.slice(0, index) };
+}
+
+async function staffAction(i: Component, allowlist: Allowlist, action: string, userId: string, applicationId: string, page?: number) {
   const { guild, message } = i;
   if (!guild || !message || i.channelId !== allowlist.config.reviewChannelId) throw new UserError('Use os controles no canal de análise da Allowlist.');
+  const privateView = page !== undefined;
+  if (privateView && !message.flags.has(MessageFlags.Ephemeral)) throw new UserError('Abra a ficha pela fila da Allowlist.');
+  const source = privateView ? undefined : message;
   const showAdjustment = action === 'adjust' && i.isButton();
-  if (!showAdjustment) await i.deferReply({ flags: MessageFlags.Ephemeral });
+  if (!showAdjustment) {
+    if (privateView && (i.isButton() || (i.isModalSubmit() && i.isFromMessage()))) await i.deferUpdate();
+    else await i.deferReply({ flags: MessageFlags.Ephemeral });
+  }
   await allowlist.requireStaff(guild, i.user.id);
   if (showAdjustment) {
     const app = await allowlist.store.get(userId);
-    if (app?.id !== applicationId || app.reviewId !== message.id || app.stage !== 'review') throw new UserError('Esta ficha não está em análise.');
-    return i.showModal(form(`al:adjust-save:${userId}:${applicationId}`, 'Pedir ajustes na ficha', [
+    if (app?.id !== applicationId || !app.reviewId || (source && app.reviewId !== source.id) || app.stage !== 'review') throw new UserError('Esta ficha não está em análise.');
+    const modalId = privateView ? `al:q-adjust-save:${userId}:${applicationId}:${page}` : `al:adjust-save:${userId}:${applicationId}`;
+    return i.showModal(form(modalId, 'Pedir ajustes na ficha', [
       { id: 'feedback', label: 'O que precisa ser ajustado?', max: 800, paragraph: true },
     ]));
   }
   return allowlist.store.run(userId, async () => {
     const current = await allowlist.store.get(userId);
-    const app = current?.id === applicationId ? current : current?.previousAttempts?.find(previous => previous.id === applicationId);
-    if (app?.id !== applicationId || app.reviewId !== message.id || app.stage === 'draft') throw new UserError('Esta ficha já foi atualizada. Use o card mais recente.');
+    const app = current?.id === applicationId ? current : archivedAttempt(current, applicationId);
+    if (!app?.reviewId || (source && app.reviewId !== source.id) || app.stage === 'draft') throw new UserError('Esta ficha já foi atualizada. Use o card mais recente.');
     if (action === 'read' && i.isStringSelectMenu()) return i.editReply(answersCard(app, i.values[0] ?? ''));
     if (app !== current) throw new UserError('O resultado desta ficha já foi publicado.');
     if (app.stage === 'approved' || app.stage === 'rejected') {
-      await allowlist.refreshReview(message, app);
+      await allowlist.refreshReview(source, app);
       throw new UserError('O resultado desta ficha já foi publicado.');
     }
     let confirmation: string;
@@ -108,7 +122,10 @@ async function staffAction(i: Component, allowlist: Allowlist, action: string, u
         await allowlist.publishDecision(app, guild, i.user.id, decision);
       } catch (error) {
         const persisted = await allowlist.store.get(userId);
-        if (persisted?.stage === 'publishing') await allowlist.refreshReview(message, persisted);
+        if (persisted?.stage === 'publishing') {
+          await allowlist.refreshReview(source, persisted);
+          if (privateView) await i.editReply(staffReading(persisted, page));
+        }
         throw error;
       }
       const outcome = decision === 'approved' ? 'Entrevista aprovada.' : 'Reprovação publicada.';
@@ -122,7 +139,8 @@ async function staffAction(i: Component, allowlist: Allowlist, action: string, u
     } else {
       throw new UserError('Esta ação não está disponível para a etapa atual.');
     }
-    await allowlist.refreshReview(message, app);
+    await allowlist.refreshReview(source, app);
+    if (privateView) return i.editReply({ ...staffReading(app, page), content: confirmation });
     return i.editReply({ content: confirmation, allowedMentions: silent });
   });
 }
@@ -138,7 +156,25 @@ export async function allowlistInteraction(i: Interaction, allowlist: Allowlist 
     return i.reply({ ...applicationCard(app, config.scheduleChannelId, config.resultChannelId, app.feedback ? 0 : undefined), flags: MessageFlags.Ephemeral });
   }
   if (!i.isButton() && !i.isModalSubmit() && !i.isStringSelectMenu()) return;
-  const [, action, key, appId] = i.customId.split(':');
+  const [, action, key, appId, pageArg] = i.customId.split(':');
+  if ((action === 'q-list' || action === 'q-open') && i.isButton()) {
+    if (i.channelId !== config.reviewChannelId) throw new UserError('Abra a central no canal de análise da Allowlist.');
+    if (i.message.flags.has(MessageFlags.Ephemeral)) await i.deferUpdate();
+    else await i.deferReply({ flags: MessageFlags.Ephemeral });
+    await allowlist.requireStaff(i.guild, i.user.id);
+    if (action === 'q-list' && (key === 'pending' || key === 'history')) {
+      return i.editReply(await queuePage(store, key, Number(appId) || 0));
+    }
+    if (action === 'q-open') {
+      const current = await store.get(snowflake(key ?? ''));
+      const app = current?.id === appId ? current : archivedAttempt(current, appId ?? '');
+      if (app?.reviewId && app.stage !== 'draft') return i.editReply(staffReading(app, Number(pageArg)));
+    }
+    throw new UserError('A ficha mudou de etapa. Atualize a fila para continuar.');
+  }
+  if (action && ['q-form-pass', 'q-interview-pass', 'q-reject', 'q-adjust', 'q-adjust-save'].includes(action)) {
+    return staffAction(i, allowlist, action.slice(2), snowflake(key ?? ''), appId ?? '', validateReadingPage(Number(pageArg)));
+  }
   if (['read', 'form-pass', 'interview-pass', 'reject', 'adjust', 'adjust-save'].includes(action ?? '')) {
     return staffAction(i, allowlist, action!, snowflake(key ?? ''), appId ?? '');
   }

@@ -78,6 +78,8 @@ async function main(): Promise<void> {
       }
       try { log('allowlist_ready', { messageId: await allowlist.ensurePanel() }); }
       catch (error) { log('allowlist_setup_failed', { code: errorCode(error) }, 'error'); }
+      try { log('allowlist_queue_ready', { messageId: await allowlist.ensureQueuePanel() }); }
+      catch (error) { log('allowlist_queue_setup_failed', { code: errorCode(error) }, 'error'); }
       void allowlist.refreshActiveReviews().catch(error => log('allowlist_review_upgrade_failed', { code: errorCode(error) }, 'warn'));
     }
     try { await recoverJoinRoles(ctx); }

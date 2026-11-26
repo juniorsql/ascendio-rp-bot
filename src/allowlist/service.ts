@@ -4,6 +4,7 @@ import { errorCode, log } from '../logs/logger.js';
 import { target } from '../services/discord.js';
 import { snowflake, UserError } from '../validation/input.js';
 import { applicationReady, formApprovalResultCard, panelCard, rejectionNotice, resultCard, reviewCard, storyButton } from './cards.js';
+import { queuePanel } from './queue.js';
 import { AllowlistStore, newApplication, retriesRemaining, type Application, type Decision } from './store.js';
 
 export interface AllowlistConfig {
@@ -80,6 +81,22 @@ export class Allowlist {
       throw new UserError('Esta ação é exclusiva da equipe da Allowlist.');
     }
     await this.reviewChannel();
+  }
+
+  async ensureQueuePanel() {
+    const channel = await this.reviewChannel();
+    const isPanel = (message: Message) => message.author.id === this.client.user?.id
+      && message.components.some(row => 'components' in row && row.components.some(component =>
+        'customId' in component && component.customId === 'al:q-list:pending:0'));
+    const pins = await channel.messages.fetchPins({ cache: false });
+    const pinned = pins.items.find(item => isPanel(item.message));
+    if (pinned) return pinned.message.id;
+    const recent = await channel.messages.fetch({ limit: 50, cache: false });
+    const message = recent.find(isPanel) ?? await channel.send({
+      ...queuePanel(), nonce: `al-q-${channel.id}`, enforceNonce: true,
+    });
+    await message.pin('Central de análise da Allowlist');
+    return message.id;
   }
 
   async ensurePanel() {
@@ -327,7 +344,9 @@ export class Allowlist {
             message.components.some(row => 'components' in row && row.components.some(component =>
               'label' in component && component.label === label && 'disabled' in component && component.disabled)));
           const updatedText = message.embeds[0]?.description === reviewCard(app).embeds[0]?.description;
-          if (!(final ? locked : alreadyUpdated) || missingStory || !updatedText) await this.refreshReview(message, app);
+          const hasReader = message.components.some(row => 'components' in row && row.components.some(component =>
+            'customId' in component && component.customId === `al:q-open:${app.userId}:${app.id}:0`));
+          if (!(final ? locked : alreadyUpdated) || missingStory || !updatedText || !hasReader) await this.refreshReview(message, app);
         });
       } catch (error) {
         log('allowlist_review_upgrade_failed', { channelId: channel.id, code: errorCode(error) }, 'warn');
@@ -335,8 +354,16 @@ export class Allowlist {
     }
   }
 
-  async refreshReview(message: Message, app: Application) {
-    try { await message.edit(reviewCard(app)); }
-    catch (error) { log('allowlist_review_refresh_failed', { channelId: message.channelId, messageId: message.id, code: errorCode(error) }, 'warn'); }
+  async refreshReview(message: Message | undefined, app: Application) {
+    try {
+      if (message) await message.edit(reviewCard(app));
+      else if (app.reviewId) {
+        const channel = await this.reviewChannel();
+        const source = await channel.messages.fetch({ message: app.reviewId, cache: false });
+        if (source.author.id === this.client.user?.id) await source.edit(reviewCard(app));
+      }
+    } catch (error) {
+      log('allowlist_review_refresh_failed', { channelId: this.config.reviewChannelId, messageId: app.reviewId, code: errorCode(error) }, 'warn');
+    }
   }
 }
