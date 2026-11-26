@@ -300,6 +300,8 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   assert.equal(announcements().length, 1);
   assert.ok((await reopened.get(applicant))?.formApprovalResultId);
   const approval = announcements()[0]?.options;
+  const approver = { name: 'Aprovado por', value: `<@${staff}>`, inline: true };
+  assert.ok(JSON.stringify(approval?.embeds).includes(JSON.stringify(approver)));
   assert.deepEqual(approval?.allowedMentions, { parse: [], users: [applicant] });
   assert.match(JSON.stringify(approval?.embeds), /FORMULÁRIO APROVADO/);
   assert.match(JSON.stringify(approval?.embeds), new RegExp(config.scheduleChannelId));
@@ -317,7 +319,8 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
     assert.equal(pending?.resultDecision, 'rejected');
     await assert.rejects(service.publishDecision(app, discordGuild, staff, 'approved'), /outro resultado em publicação/);
   }
-  await service.publishDecision(app, discordGuild, staff, decision);
+  const interviewer = '433456789012345678';
+  await service.publishDecision(app, discordGuild, interviewer, decision);
   await service.publishDecision(app, discordGuild, staff, decision);
   assert.equal(applicantRoles.size, 0);
   assert.equal(app.stage, decision);
@@ -344,6 +347,8 @@ for (const decision of ['approved', 'rejected'] as const) test(`Allowlist restri
   const result = announcements()[1]?.options;
   assert.deepEqual(result?.allowedMentions, { parse: [], users: [applicant] });
   assert.match(JSON.stringify(result?.embeds), new RegExp(decision === 'approved' ? 'ALLOWLIST APROVADA' : 'ALLOWLIST REPROVADA'));
+  assert.equal(JSON.stringify(result?.embeds).includes(JSON.stringify({ ...approver, value: `<@${interviewer}>` })), decision === 'approved');
+  assert.ok(!JSON.stringify(result?.embeds).includes(JSON.stringify(approver)));
   assert.doesNotMatch(JSON.stringify(result), /Minha resposta|historiaabc/);
   assert.match(JSON.stringify((await staffClick('al:q-list:pending:0'))[1]), /Nenhuma ficha aguardando/);
   const historyView = (await staffClick('al:q-list:history:0'))[1];

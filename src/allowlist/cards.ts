@@ -194,6 +194,7 @@ export function resultCard(app: Application, decision: Decision) {
       fields: [
         { name: 'Personagem', value: character, inline: true },
         { name: 'Jogador', value: `<@${app.userId}>`, inline: true },
+        ...(approved && app.interviewerId ? [{ name: 'Aprovado por', value: `<@${app.interviewerId}>`, inline: true }] : []),
       ],
       footer,
     }],
@@ -208,7 +209,10 @@ export function formApprovalResultCard(app: Application, scheduleChannelId: stri
       title: '✦ FORMULÁRIO APROVADO ✦',
       description: `Parabéns! Seu formulário da Allowlist foi aprovado. Você recebeu o cargo **Aguardando Entrevista**.\n\nFique de olho em <#${scheduleChannelId}> e envie sua disponibilidade para combinar o horário com a staff.`,
       color: gold,
-      fields: [{ name: 'Personagem', value: safeText(escapeMarkdown(app.character)) }],
+      fields: [
+        { name: 'Personagem', value: safeText(escapeMarkdown(app.character)) },
+        ...(app.reviewerId ? [{ name: 'Aprovado por', value: `<@${app.reviewerId}>`, inline: true }] : []),
+      ],
       footer: { text: `${footer.text} • Ficha ${app.id}` },
     }],
     allowedMentions: { parse: [] as never[], users: [app.userId] },
