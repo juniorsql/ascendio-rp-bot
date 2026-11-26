@@ -11,6 +11,9 @@ test('indicação confere o cargo, mostra o perfil e recupera um registro sem du
   t.after(() => rm(dir, { recursive: true, force: true }));
   const guildId = '123456789012345678';
   const channelId = '223456789012345678';
+  const recordChannelId = '223456789012345679';
+  const rulesChannelId = '223456789012345680';
+  const loreChannelId = '223456789012345681';
   const inviterRoleId = '323456789012345678';
   const referredRoleId = '423456789012345678';
   const inviterId = '523456789012345678';
@@ -33,7 +36,7 @@ test('indicação confere o cargo, mostra o perfil e recupera um registro sem du
   const messages = new Collection<string, unknown>();
   const posted: MessageCreateOptions[] = [];
   const channel = {
-    id: channelId, guildId, guild, type: ChannelType.GuildText,
+    id: recordChannelId, guildId, guild, type: ChannelType.GuildText,
     permissionsFor: (who: unknown) => who === everyone ? new PermissionsBitField() : bot.permissions,
     messages: { fetch: async () => messages },
     send: async (options: MessageCreateOptions) => {
@@ -42,8 +45,12 @@ test('indicação confere o cargo, mostra o perfil e recupera um registro sem du
       throw new Error('Resposta da publicação perdida');
     },
   };
-  const client = { user: { id: botId }, channels: { fetch: async () => channel } } as unknown as Client;
-  const referrals = new Referrals(client, guildId, { channelId, inviterRoleId, referredRoleId }, dir);
+  const client = { user: { id: botId }, channels: { fetch: async (id: string) => {
+    assert.equal(id, recordChannelId);
+    return channel;
+  } } } as unknown as Client;
+  const config = { channelId, recordChannelId, inviterRoleId, referredRoleId, rulesChannelId, loreChannelId };
+  const referrals = new Referrals(client, guildId, config, dir);
   await referrals.init();
   const replies: unknown[] = [];
   function interaction(customId: string, candidateRoles: string[] = [], modal = false) {
@@ -63,12 +70,16 @@ test('indicação confere o cargo, mostra o perfil e recupera um registro sem du
   await assert.rejects(referrals.handle(interaction(buttonId, [inviterRoleId])), /Pode indicar/);
   actorRoles.add(inviterRoleId);
   await assert.rejects(referrals.handle(interaction(buttonId, [inviterRoleId])), /Resposta da publicação perdida/);
-  const reopened = new Referrals(client, guildId, { channelId, inviterRoleId, referredRoleId }, dir);
+  const reopened = new Referrals(client, guildId, config, dir);
   await reopened.handle(interaction(buttonId, [inviterRoleId]));
   assert.deepEqual([...referredRoles], [referredRoleId]);
   assert.match(JSON.stringify(posted[0]), /⭐ Indicação registrada/);
   assert.ok(JSON.stringify(posted[0]).includes(inviterId));
-  assert.ok(JSON.stringify(replies[1]).includes(messageId));
+  const confirmation = JSON.stringify(replies[1]);
+  assert.ok(confirmation.includes(`/${recordChannelId}/${messageId}`));
+  assert.ok(confirmation.includes(`<#${rulesChannelId}>`));
+  assert.ok(confirmation.includes(`<#${loreChannelId}>`));
+  assert.match(confirmation, /Indicar outra pessoa/);
   assert.equal(posted.length, 1);
   await assert.rejects(reopened.handle(interaction(buttonId, [inviterRoleId])), /Já existe uma indicação/);
 });

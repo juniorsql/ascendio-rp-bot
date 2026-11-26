@@ -7,7 +7,14 @@ import { errorCode } from '../logs/logger.js';
 import { safeText, snowflake, UserError } from '../validation/input.js';
 import { target } from './discord.js';
 
-interface ReferralConfig { channelId: string; inviterRoleId: string; referredRoleId: string }
+interface ReferralConfig {
+  channelId: string;
+  recordChannelId?: string;
+  inviterRoleId: string;
+  referredRoleId: string;
+  rulesChannelId?: string;
+  loreChannelId?: string;
+}
 interface Referral { id: string; inviterId: string; referredId: string; at: number; messageId?: string }
 const openId = 'referral:open';
 const responsibility = 'Quem indica assume a responsabilidade pela indicação. Se o indicado descumprir as regras do servidor, quem indicou também será punido pela staff.';
@@ -18,8 +25,11 @@ export function referralConfig(value?: string): ReferralConfig | undefined {
   const config = JSON.parse(value) as Partial<ReferralConfig>;
   return {
     channelId: snowflake(config.channelId ?? ''),
+    recordChannelId: config.recordChannelId === undefined ? undefined : snowflake(config.recordChannelId),
     inviterRoleId: snowflake(config.inviterRoleId ?? ''),
     referredRoleId: snowflake(config.referredRoleId ?? ''),
+    rulesChannelId: config.rulesChannelId === undefined ? undefined : snowflake(config.rulesChannelId),
+    loreChannelId: config.loreChannelId === undefined ? undefined : snowflake(config.loreChannelId),
   };
 }
 
@@ -35,8 +45,17 @@ export class Referrals {
   async init() { await mkdir(this.folder, { recursive: true, mode: 0o700 }); }
   async idle() { await Promise.allSettled(this.pending.values()); }
 
-  private async channel() {
-    const channel = await target(this.client, this.guildId, this.config.channelId);
+  private get recordChannelId() { return this.config.recordChannelId ?? this.config.channelId; }
+
+  private get reading() {
+    const { rulesChannelId, loreChannelId } = this.config;
+    const rules = rulesChannelId ? `<#${rulesChannelId}>` : '**Regras**';
+    const lore = loreChannelId ? `<#${loreChannelId}>` : '**Profeta Diário**';
+    return `Antes da entrevista, oriente a pessoa indicada a ler as ${rules} e o ${lore}, onde estão a lore e a ambientação do servidor.`;
+  }
+
+  private async channel(id: string) {
+    const channel = await target(this.client, this.guildId, id);
     if (channel.permissionsFor(channel.guild.roles.everyone)?.has(PermissionFlagsBits.ViewChannel) !== false) {
       throw new UserError('O canal de indicações precisa ter acesso restrito.');
     }
@@ -44,14 +63,18 @@ export class Referrals {
   }
 
   async ensurePanel() {
-    const channel = await this.channel();
+    const channel = await this.channel(this.config.channelId);
+    if (this.recordChannelId !== channel.id) await this.channel(this.recordChannelId);
     await joinRole(channel.guild, this.config.referredRoleId);
     const guide = {
       embeds: [{
         title: '⭐ Indicações • Ascendio RP',
         color: 0xb69a60,
         description: '**Como indicar**\n1. Clique em **🪄 Indicar jogador**.\n2. Cole o ID do Discord da pessoa e confira o perfil exibido.\n3. Confirme. O bot registra a indicação e aplica o cargo **⭐ Indicado**.\n\nA staff atribui manualmente o cargo **Aguardando Entrevista** e combina o horário com o indicado.\n\n**Responsabilidade pela indicação**\n' + responsibility,
-        fields: [{ name: 'Como copiar o ID', value: 'Ative o **Modo desenvolvedor** nas configurações avançadas do Discord. Abra o menu do perfil da pessoa e selecione **Copiar ID de usuário**.' }],
+        fields: [
+          { name: 'Leitura para a pessoa indicada', value: this.reading },
+          { name: 'Como copiar o ID', value: 'Ative o **Modo desenvolvedor** nas configurações avançadas do Discord. Abra o menu do perfil da pessoa e selecione **Copiar ID de usuário**.' },
+        ],
       }],
       components: [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(openId)
         .setLabel('Indicar jogador').setEmoji('🪄').setStyle(ButtonStyle.Primary))],
@@ -61,10 +84,12 @@ export class Referrals {
       message.author.id === this.client.user?.id && JSON.stringify(message.components).includes(openId);
     const pins = await channel.messages.fetchPins({ cache: false });
     const pinned = pins.items.find(item => isGuide(item.message))?.message;
-    if (pinned) return pinned.id;
     const recent = await channel.messages.fetch({ limit: 50, cache: false });
-    const message = recent.find(isGuide) ?? await channel.send({ ...guide, nonce: `rf-${channel.id}`, enforceNonce: true });
-    await message.pin('Guia de indicações do Ascendio RP');
+    const existing = pinned ?? recent.find(isGuide);
+    const message = existing ?? await channel.send({ ...guide, nonce: `rf-${channel.id}`, enforceNonce: true });
+    if (existing && (existing.embeds[0]?.description !== guide.embeds[0]?.description
+      || !existing.embeds[0]?.fields.some(field => field.value === this.reading))) await existing.edit(guide);
+    if (!pinned) await message.pin('Guia de indicações do Ascendio RP');
     return message.id;
   }
 
@@ -112,7 +137,7 @@ export class Referrals {
     if (existing?.messageId || (existing && existing.inviterId !== inviterId)) {
       throw new UserError('Já existe uma indicação registrada ou em andamento para esse jogador.');
     }
-    const channel = await this.channel();
+    const channel = await this.channel(this.recordChannelId);
     const role = await joinRole(channel.guild, this.config.referredRoleId);
     const record: Referral = existing ?? { id, inviterId, referredId: member.id, at: Date.now() };
     if (!existing) await this.save(record);
@@ -137,7 +162,7 @@ export class Referrals {
           { name: 'Indicado', value: `<@${member.id}> · ${safeText(escapeMarkdown(member.user.username))}` },
           { name: 'ID do Discord', value: member.id, inline: true },
           { name: 'Responsável pela indicação', value: `<@${inviterId}>`, inline: true },
-          { name: 'Próxima etapa', value: 'A staff atribui manualmente o cargo **Aguardando Entrevista**.' },
+          { name: 'Próxima etapa', value: `A staff atribui manualmente o cargo **Aguardando Entrevista**.\n${this.reading}` },
         ],
         description: responsibility,
         footer: { text: footer },
@@ -178,8 +203,10 @@ export class Referrals {
       const member = await this.candidate(i.guild, snowflake(id ?? ''), i.user.id);
       const messageId = await this.register(i.user.id, member, i.id);
       return i.editReply({
-        content: `⭐ **Indicação registrada.** <@${member.id}> recebeu o cargo **⭐ Indicado**. [Ver registro](https://discord.com/channels/${this.guildId}/${this.config.channelId}/${messageId}).`,
-        components: [], allowedMentions,
+        content: `⭐ **Indicação registrada.** <@${member.id}> recebeu o cargo **⭐ Indicado**. [Ver registro](https://discord.com/channels/${this.guildId}/${this.recordChannelId}/${messageId}).\n\n${this.reading}`,
+        components: [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder()
+          .setCustomId(openId).setLabel('Indicar outra pessoa').setEmoji('🪄').setStyle(ButtonStyle.Primary))],
+        allowedMentions,
       });
     }
     throw new UserError('Abra o formulário de indicação para continuar.');
